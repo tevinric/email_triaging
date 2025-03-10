@@ -1,0 +1,21 @@
+Column	DataType	Allow Nulls
+id	varchar(50)	Checked
+eml_id	varchar(MAX)	Checked
+dttm_rec	datetime	Checked
+dttm_proc	datetime	Checked
+eml_to	varchar(MAX)	Checked
+eml_frm	varchar(MAX)	Checked
+eml_cc	varchar(MAX)	Checked
+eml_sub	varchar(MAX)	Checked
+eml_bdy	varchar(MAX)	Checked
+apex_class	varchar(MAX)	Checked
+apex_class_rsn	text	Checked
+apex_action_req	text	Checked
+apex_sentiment	varchar(50)	Checked
+apex_cost_usd	float	Checked
+apex_routed_to	varchar(MAX)	Checked
+sts_read_eml	text	Checked
+sts_class	text	Checked
+sts_routing	text	Checked
+tat	float	Checked
+end_time	datetime	Checked
