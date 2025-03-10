@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: #{ApplicationName}#
+  labels:
+    app: #{ApplicationName}#
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: #{ApplicationName}#
+  template:
+    metadata:
+      labels:
+        app: #{ApplicationName}#
+    spec:
+      containers:
+        - name: #{ApplicationName}#
+          image: #{RegistryAddress}#/#{ImageName}#:#{Version}#
+          env:
+          #OPENAI CREDENTIALS
+          - name: AZURE_OPENAI_KEY
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_OPENAI_KEY
+
+          - name: AZURE_OPENAI_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_OPENAI_ENDPOINT
+          
+          #SQL CREDENTIALS
+          - name: SQL_SERVER
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: SQL_SERVER
+
+          - name: SQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: SQL_DATABASE
+
+          - name: SQL_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: SQL_USERNAME
+
+          - name: SQL_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: SQL_USERNAME
+
+          - name: SQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: SQL_PASSWORD
+
+          # EMAIL APP CREDENTIALS
+          - name: CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: CLIENT_ID
+
+          - name: TENANT_ID
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: TENANT_ID
+
+          - name: CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: CLIENT_SECRET
+
+          # EMAIL DETAILS - RECIEVING
+          - name: EMAIL_ACCOUNT
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: EMAIL_ACCOUNT       
+
+          # EMAIL DETAIL - ROUTING
+          - name: POLICY_SERVICES
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: POLICY_SERVICES
+
+          - name: TRACKING_MAILS
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: TRACKING_MAILS     
+
+          - name: CLAIMS_MAILS
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: CLAIMS_MAILS     
+
+          - name: ONLINESUPPORT_MAILS
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: ONLINESUPPORT_MAILS 
+
+          - name: INSURANCEADMIN_MAILS
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: INSURANCEADMIN_MAILS                
+
+          - name: DIGITALCOMMS_MAILS
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: DIGITALCOMMS_MAILS   
+
+          - name: CONNEX_TEST
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: CONNEX_TEST  
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: false
+          ports:
+            - containerPort: 80
+              name: http
+          #livenessProbe:
+          #  failureThreshold: 3
+          #  httpGet:
+          #    path: /health
+          #    port: 80
+          #    scheme: HTTP
+          #  initialDelaySeconds: 10
+          #  periodSeconds: 2
+          #  successThreshold: 1
+          #  timeoutSeconds: 2
+          #readinessProbe:
+          #  failureThreshold: 3
+          # httpGet:
+          #   path: /health
+          #   port: 80
+          #   scheme: HTTP
+          # initialDelaySeconds: 10
+          # periodSeconds: 2
+          # successThreshold: 2
+          # timeoutSeconds: 2
+          resources:
+            requests:
+              ephemeral-storage: 100Mi
+            limits:
+              ephemeral-storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: #{ApplicationName}#
+  labels:
+    app: #{ApplicationName}#-service
+spec:
+  selector:
+    app: #{ApplicationName}#
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: #{ApplicationName}#-node
+  labels:
+    app: #{ApplicationName}#-service-node
+spec:
+  selector:
+    app: #{ApplicationName}#
+  ports:
+    - name: http-node
+      port: 80
+      protocol: TCP
+  type: NodePort

@@ -1,0 +1,14 @@
+variables:
+    applicationName: apex
+    teamName: coe
+    projectNamespace: coe-projects
+    #K8sManifestDir: 
+    SonarQubeApplication:
+    SonarQubeContinueOnError:
+    #projectKey:
+    #serviceLanguage:
+    #RunUnitTests:
+    #RunLintChecks:
+    KongEnabled: false
+    #KongDirectory:
+    #NugetAuth: 

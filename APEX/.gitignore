@@ -1,0 +1,10 @@
+
+/env_var_init.sh
+git_push.sh
+vars.txt
+env_var_init_dev.sh
+env_var_init_prod.sh
+env_var_init_sit.sh
+env_var_init_uat.sh
+.env
+/env
