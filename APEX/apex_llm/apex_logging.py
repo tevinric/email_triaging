@@ -27,6 +27,8 @@ def create_log(email_data):
     add_to_log("eml_cc", email_data.get('cc'), log)
     add_to_log("eml_sub", email_data.get('subject'), log)
     add_to_log("eml_bdy", email_data.get('body_text'), log) 
+    # Add default acknowledged value of 0
+    add_to_log("acknowledged", 0, log)
     return log
 
 def add_to_log(key, value, log):
