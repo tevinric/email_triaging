@@ -98,11 +98,24 @@ def log_apex_success(apex_response, log):
     """
     try:
         message = apex_response.get('message', {})
+        
+        # Store the final classification
         add_to_log("apex_class", message.get('classification', 'error'), log)
         add_to_log("apex_class_rsn", message.get('rsn_classification', 'error'), log)
         add_to_log("apex_action_req", message.get('action_required', 'error'), log)
         add_to_log("apex_sentiment", message.get('sentiment', 'error'), log)
         add_to_log("apex_cost_usd", message.get('apex_cost_usd', 0.0), log)
+        
+        # Store the top 3 categories if available
+        original_categories = message.get('original_categories', [])
+        if isinstance(original_categories, list) and original_categories:
+            # Convert list to string representation for storage
+            top_categories_str = ', '.join(original_categories)
+            add_to_log("apex_top_categories", top_categories_str, log)
+        else:
+            # If not available, set a default or empty value
+            add_to_log("apex_top_categories", "", log)
+            
     except Exception as e:
         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: apex_logging.py - Function: log_apex_success - Error logging APEX success: {str(e)}")
         # Set error values if exception occurs
@@ -111,6 +124,7 @@ def log_apex_success(apex_response, log):
         add_to_log("apex_action_req", "error", log)
         add_to_log("apex_sentiment", "error", log)
         add_to_log("apex_cost_usd", 0.00, log)
+        add_to_log("apex_top_categories", "", log)
 
 def log_apex_fail(log, classification_error_message):
     """
@@ -133,6 +147,8 @@ def log_apex_fail(log, classification_error_message):
         add_to_log("apex_action_req", "error", log)
         add_to_log("apex_sentiment", "error", log)
         add_to_log("apex_cost_usd", 0.00, log)
+        add_to_log("apex_top_categories", "", log)
+        add_to_log("apex_intervention", "false", log)
     except Exception as e:
         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: apex_logging.py - Function: log_apex_fail - Error logging APEX failure: {str(e)}")
         # Set generic error values if exception occurs
@@ -141,6 +157,31 @@ def log_apex_fail(log, classification_error_message):
         add_to_log("apex_action_req", "error", log)
         add_to_log("apex_sentiment", "error", log)
         add_to_log("apex_cost_usd", 0.00, log)
+        add_to_log("apex_top_categories", "", log)
+        add_to_log("apex_intervention", "false", log)
+
+def log_apex_intervention(log, original_destination, routed_destination):
+    """
+    Determine and log if AI intervention occurred (changed destination).
+    
+    Args:
+        log (dict): Log dictionary to update
+        original_destination (str): Original destination email address
+        routed_destination (str): Final destination email address after AI classification
+        
+    Returns:
+        None
+    """
+    try:
+        # Compare original and routed destinations - case insensitive comparison
+        if original_destination.lower() != routed_destination.lower():
+            add_to_log("apex_intervention", "true", log)
+        else:
+            add_to_log("apex_intervention", "false", log)
+    except Exception as e:
+        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: apex_logging.py - Function: log_apex_intervention - Error logging intervention: {str(e)}")
+        # Default to false if error occurs
+        add_to_log("apex_intervention", "false", log)
 
 async def insert_log_to_db(log, max_retries=3):
     """
