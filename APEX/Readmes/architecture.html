@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>APEX Email Triaging System Architecture</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+    }
+    .diagram-container {
+      max-width: 100%;
+      overflow: auto;
+      margin-bottom: 30px;
+    }
+    .instructions {
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      color: #2c3e50;
+    }
+    h2 {
+      color: #3498db;
+      margin-top: 30px;
+    }
+    pre {
+      background-color: #f8f9fa;
+      padding: 15px;
+      overflow: auto;
+      border-radius: 5px;
+      max-height: 400px;
+    }
+    .component {
+      background-color: #e3f2fd;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .flow-step {
+      margin-left: 20px;
+    }
+    ul, ol {
+      padding-left: 25px;
+    }
+  </style>
+</head>
+<body>
+  <h1>APEX Email Triaging System Architecture</h1>
+  
+  <div class="instructions">
+    <h3>How to Import This Diagram</h3>
+    <ol>
+      <li>Copy the XML content below</li>
+      <li>Open draw.io (https://app.diagrams.net/)</li>
+      <li>Click File > Import From > XML</li>
+      <li>Paste the XML and click Import</li>
+    </ol>
+  </div>
+
+  <h2>Diagram Preview</h2>
+  <div class="diagram-container">
+    <img src="/api/placeholder/800/600" alt="APEX Architecture Diagram" />
+  </div>
+
+  <h2>Architecture Components</h2>
+  
+  <div class="component">
+    <h3>Email Source</h3>
+    <p>Microsoft Graph API provides access to unread emails from configured mailboxes. The system connects using OAuth2 authentication with client credentials flow.</p>
+  </div>
+  
+  <div class="component">
+    <h3>Main Processing System</h3>
+    <p>Core email processing logic that coordinates the entire workflow. Implemented as an asynchronous service that polls for new emails at configured intervals.</p>
+  </div>
+  
+  <div class="component">
+    <h3>AI Classification Engine</h3>
+    <p>Azure OpenAI GPT-4o models analyze email content to determine category, sentiment, and required action. The system uses both the full model and a mini version for different processing tasks.</p>
+  </div>
+  
+  <div class="component">
+    <h3>Email Routing System</h3>
+    <p>Routes emails to appropriate destinations based on AI classification results, with fallback mechanisms to ensure delivery.</p>
+  </div>
+  
+  <div class="component">
+    <h3>Logging & Database</h3>
+    <p>SQL Server database stores comprehensive logs of all processed emails, including classification results, routing decisions, and processing metrics.</p>
+  </div>
+
+  <h2>Process Flow</h2>
+  <ol>
+    <li><strong>Email Fetch:</strong> System polls Microsoft Graph API for unread emails in batches
+      <div class="flow-step">
+        <ul>
+          <li>Uses OAuth2 authentication to obtain access token</li>
+          <li>Retrieves batches of unread emails (default: 3 at a time)</li>
+          <li>Converts raw email data into structured format</li>
+        </ul>
+      </div>
+    </li>
+    <li><strong>Duplicate Check:</strong> System verifies if email has already been processed
+      <div class="flow-step">
+        <ul>
+          <li>Checks database for existing record with the same email ID</li>
+          <li>Skips processing if email is already in the database</li>
+        </ul>
+      </div>
+    </li>
+    <li><strong>AI Classification:</strong> Email content analyzed by Azure OpenAI
+      <div class="flow-step">
+        <ul>
+          <li>Primary classification using GPT-4o determines category, sentiment, action required</li>
+          <li>Secondary check with GPT-4o-mini validates if action is required</li>
+          <li>Classification prioritization determines final routing category</li>
+        </ul>
+      </div>
+    </li>
+    <li><strong>Email Forwarding:</strong> System forwards email to appropriate destination
+      <div class="flow-step">
+        <ul>
+          <li>Primary path: Forward to category-specific address based on AI classification</li>
+          <li>Error handling: If primary forwarding fails, forward to original recipient</li>
+          <li>Sets reply-to header to maintain original sender information</li>
+          <li>Maintains CC recipients from original email</li>
+        </ul>
+      </div>
+    </li>
+    <li><strong>Status Update:</strong> System marks email as read only after successful forwarding
+      <div class="flow-step">
+        <ul>
+          <li>Marks as read only if forwarding was successful (primary or fallback path)</li>
+          <li>Maintains unread status if forwarding fails completely</li>
+          <li>Tracks emails that were processed but couldn't be marked as read for retry</li>
+        </ul>
+      </div>
+    </li>
+    <li><strong>Logging:</strong> Comprehensive logging of the entire process
+      <div class="flow-step">
+        <ul>
+          <li>Records email metadata, classification results, processing time</li>
+          <li>Logs success/failure status for each step of the process</li>
+          <li>Captures AI processing costs for monitoring</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h2>Error Handling</h2>
+  <ul>
+    <li><strong>Classification Errors:</strong> If AI classification fails, email is forwarded to original recipient</li>
+    <li><strong>Forwarding Errors:</strong> Multiple retry attempts with exponential backoff</li>
+    <li><strong>Database Errors:</strong> Retry mechanisms ensure logs are eventually stored</li>
+    <li><strong>Token Errors:</strong> Authentication failures trigger retry with fresh tokens</li>
+    <li><strong>Safe Attachment Handling:</strong> Special handling for emails with attachments being scanned</li>
+  </ul>
+
+  <h2>XML Diagram Definition</h2>
+  <pre id="diagramXml">
+&lt;mxfile host="app.diagrams.net" modified="2025-05-05T10:00:00.000Z" agent="5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36" etag="diagram-id" version="14.7.4" type="device"&gt;
+  &lt;diagram id="C5RBs43oDa-KdzZeNtuy" name="APEX Email Triaging System"&gt;
+    &lt;mxGraphModel dx="1422" dy="798" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0"&gt;
+      &lt;root&gt;
+        &lt;mxCell id="WIyWlLk6GJQsqaUBKTNV-0" /&gt;
+        &lt;mxCell id="WIyWlLk6GJQsqaUBKTNV-1" parent="WIyWlLk6GJQsqaUBKTNV-0" /&gt;
+        
+        &lt;!-- Title --&gt;
+        &lt;mxCell id="title" value="APEX Email Triaging System Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="164" y="20" width="500" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Email Source --&gt;
+        &lt;mxCell id="email-source-container" value="Email Source" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="294" y="80" width="240" height="80" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="email-source-api" value="Microsoft Graph API - emails endpoint" style="whiteSpace=wrap;html=1;align=center;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="email-source-container"&gt;
+          &lt;mxGeometry y="26" width="240" height="54" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Main Process System --&gt;
+        &lt;mxCell id="main-process-container" value="Main Process System" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="50" y="200" width="730" height="340" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Step 1: Fetch Emails --&gt;
+        &lt;mxCell id="fetch-emails" value="1. Fetch unread emails (batch of 3 every 30 seconds)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="main-process-container"&gt;
+          &lt;mxGeometry x="245" y="40" width="240" height="40" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Step 2: Check Already Processed --&gt;
+        &lt;mxCell id="check-processed" value="2. Email Already Processed?" style="rhombus;whiteSpace=wrap;html=1;shadow=0;fontFamily=Helvetica;fontSize=12;align=center;strokeWidth=1;spacing=6;spacingTop=-4;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="main-process-container"&gt;
+          &lt;mxGeometry x="265" y="110" width="200" height="80" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Step 3: Extract Content --&gt;
+        &lt;mxCell id="extract-content" value="3. Extract Email Content" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="main-process-container"&gt;
+          &lt;mxGeometry x="245" y="220" width="240" height="40" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Step 4: Process Email --&gt;
+        &lt;mxCell id="process-email" value="4. Process Email Content, Log Results" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="main-process-container"&gt;
+          &lt;mxGeometry x="245" y="280" width="240" height="40" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Connect steps in Main Process Container --&gt;
+        &lt;mxCell id="arrow-fetch-to-check" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="main-process-container" source="fetch-emails" target="check-processed"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="arrow-check-to-extract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="main-process-container" source="check-processed" target="extract-content"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="arrow-extract-to-process" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="main-process-container" source="extract-content" target="process-email"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="arrow-check-to-mark" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="main-process-container" source="check-processed"&gt;
+          &lt;mxGeometry relative="1" as="geometry"&gt;
+            &lt;mxPoint x="540" y="150" as="targetPoint" /&gt;
+          &lt;/mxGeometry&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="already-processed-label" value="Yes - Already processed" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="main-process-container"&gt;
+          &lt;mxGeometry x="465" y="120" width="140" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="mark-as-read" value="Skip processing, just mark as read" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="main-process-container"&gt;
+          &lt;mxGeometry x="540" y="130" width="170" height="40" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="not-processed-label" value="No - New email" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="main-process-container"&gt;
+          &lt;mxGeometry x="365" y="190" width="100" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Connect Email Source to Main Process --&gt;
+        &lt;mxCell id="arrow-source-to-fetch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="email-source-api" target="fetch-emails"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- AI Classification System --&gt;
+        &lt;mxCell id="ai-system-container" value="AI Classification System" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="50" y="580" width="240" height="130" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="ai-services" value="Azure OpenAI Services" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" vertex="1" parent="ai-system-container"&gt;
+          &lt;mxGeometry y="26" width="240" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="ai-model-full" value="GPT-4o - Main Classification" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="ai-system-container"&gt;
+          &lt;mxGeometry y="56" width="240" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        &lt;mxCell id="ai-model-mini" value="GPT-4o-mini - Action Verification" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="ai-system-container"&gt;
+          &lt;mxGeometry y="86" width="240" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Email Routing System --&gt;
+        &lt;mxCell id="routing-container" value="Email Routing System" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="294" y="580" width="240" height="130" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="classification-success-check" value="Classification successful?" style="rhombus;whiteSpace=wrap;html=1;shadow=0;fontFamily=Helvetica;fontSize=12;align=center;strokeWidth=1;spacing=6;spacingTop=-4;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="routing-container"&gt;
+          &lt;mxGeometry y="26" width="240" height="44" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="primary-routing" value="Route to categorized destination" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="routing-container"&gt;
+          &lt;mxGeometry y="70" width="120" height="60" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="fallback-routing" value="Route to original destination" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="routing-container"&gt;
+          &lt;mxGeometry x="120" y="70" width="120" height="60" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Database System --&gt;
+        &lt;mxCell id="db-container" value="Database System" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="540" y="580" width="240" height="130" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="sql-server" value="SQL Server Database" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="db-container"&gt;
+          &lt;mxGeometry x="85" y="36" width="70" height="80" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="db-tables" value="logs table" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="db-container"&gt;
+          &lt;mxGeometry x="90" y="100" width="60" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Connect Main Process to Systems --&gt;
+        &lt;mxCell id="arrow-process-to-ai" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="main-process-container" target="ai-system-container"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="arrow-process-to-routing" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="main-process-container" target="routing-container"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="arrow-process-to-db" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="main-process-container" target="db-container"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Email Forwarding Stage --&gt;
+        &lt;mxCell id="forwarding-container" value="Email Delivery &amp; Status Update" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="50" y="750" width="730" height="190" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="forwarding-success" value="Forwarding successful?" style="rhombus;whiteSpace=wrap;html=1;shadow=0;fontFamily=Helvetica;fontSize=12;align=center;strokeWidth=1;spacing=6;spacingTop=-4;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="forwarding-container"&gt;
+          &lt;mxGeometry x="265" y="36" width="200" height="80" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="mark-read" value="Mark email as read" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="forwarding-container"&gt;
+          &lt;mxGeometry x="245" y="140" width="240" height="40" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="arrow-forward-to-mark" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="forwarding-container" source="forwarding-success" target="mark-read"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="success-label" value="Yes" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="forwarding-container"&gt;
+          &lt;mxGeometry x="365" y="116" width="40" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="retry-or-keep-unread" value="Keep unread or retry later" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="forwarding-container"&gt;
+          &lt;mxGeometry x="540" y="56" width="170" height="40" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="arrow-forward-to-retry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="forwarding-container" source="forwarding-success" target="retry-or-keep-unread"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="fail-label" value="No" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="forwarding-container"&gt;
+          &lt;mxGeometry x="480" y="56" width="40" height="30" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Connect Systems to Forwarding Stage --&gt;
+        &lt;mxCell id="arrow-routing-to-forward" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="routing-container" target="forwarding-container"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Final Logging Stage --&gt;
+        &lt;mxCell id="logging-container" value="Final Logging" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1"&gt;
+          &lt;mxGeometry x="294" y="980" width="240" height="150" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="log-success" value="Log Success" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="logging-container"&gt;
+          &lt;mxGeometry y="36" width="240" height="40" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;mxCell id="log-entry-details" value="- Email metadata&#xa;- Classification results&#xa;- Routing destination&#xa;- Processing time&#xa;- AI cost" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" vertex="1" parent="logging-container"&gt;
+          &lt;mxGeometry y="76" width="240" height="74" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Connect Forwarding to Logging --&gt;
+        &lt;mxCell id="arrow-forwarding-to-logging" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="forwarding-container" target="logging-container"&gt;
+          &lt;mxGeometry relative="1" as="geometry" /&gt;
+        &lt;/mxCell&gt;
+        
+        &lt;!-- Connect Logging to Database --&gt;
+        &lt;mxCell id="arrow-logging-to-db" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="log-success" target="sql-server"&gt;
+          &lt;mxGeometry relative="1" as="geometry"&gt;
+            &lt;Array as="points"&gt;
+              &lt;mxPoint x="660" y="1036" /&gt;
+              &lt;mxPoint x="660" y="730" /&gt;
+              &lt;mxPoint x="625" y="730" /&gt;
+            &lt;/Array&gt;
+          &lt;/mxGeometry&gt;
+        &lt;/mxCell&gt;
+        
+      &lt;/root&gt;
+    &lt;/mxGraphModel&gt;
+  &lt;/diagram&gt;
+&lt;/mxfile&gt;
+  </pre>
+
+  <hr>
+  <h2>Handling Edge Cases</h2>
+  <ul>
+    <li><strong>Attachment Scan in Progress:</strong> The system detects when email attachments are still being scanned for security and will not forward emails in this state to prevent data loss.</li>
+    <li><strong>Connectivity Issues:</strong> The system implements exponential backoff retry mechanisms for all external service calls.</li>
+    <li><strong>Large Email Bodies:</strong> Email bodies are truncated if they exceed database field limits, ensuring all emails can be logged.</li>
+    <li><strong>Character Encoding Issues:</strong> The system handles Unicode encoding errors to ensure logs can be created even if emails contain unusual characters.</li>
+    <li><strong>Authentication Failures:</strong> If Microsoft Graph API authentication fails, the system will attempt to refresh tokens.</li>
+    <li><strong>Classification Ambiguities:</strong> When AI classification results are ambiguous, prioritization logic ensures consistent routing.</li>
+  </ul>
+  
+  <hr>
+  <h2>Performance Considerations</h2>
+  <ul>
+    <li><strong>Batch Processing:</strong> Emails are processed in small batches to avoid overwhelming APIs and services.</li>
+    <li><strong>Asynchronous Operations:</strong> All networking and database operations are performed asynchronously to maintain responsiveness.</li>
+    <li><strong>Threading Pool:</strong> Database operations use a dedicated thread pool to control resource usage.</li>
+    <li><strong>Rate Limiting:</strong> The system respects API rate limits by implementing appropriate delays between operations.</li>
+    <li><strong>Model Selection:</strong> Uses GPT-4o-mini for quick operations and full GPT-4o only when detailed analysis is necessary.</li>
+  </ul>
+</body>
+</html>
