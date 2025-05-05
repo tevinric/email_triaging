@@ -4,7 +4,7 @@ import asyncio
 from email_processor.email_client import get_access_token, fetch_unread_emails, forward_email, mark_email_as_read, force_mark_emails_as_read
 from apex_llm.apex import apex_categorise, apex_action_check
 from config import EMAIL_ACCOUNTS, EMAIL_FETCH_INTERVAL, DEFAULT_EMAIL_ACCOUNT
-from apex_llm.apex_logging import create_log, add_to_log, log_apex_success, log_apex_fail, insert_log_to_db, check_email_processed
+from apex_llm.apex_logging import create_log, add_to_log, log_apex_success, log_apex_fail, insert_log_to_db, check_email_processed, log_apex_intervention
 import datetime
 from apex_llm.apex_routing import ang_routings
 
@@ -72,6 +72,9 @@ async def process_email(access_token, account, email_data, message_id):
                     print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - APEX classification '{apex_response['message']['classification']}' not found in routing table. Forwarding to the original recipient.")
                     FORWARD_TO = original_destination
                 
+                # Log whether AI intervention occurred (changed the destination)
+                log_apex_intervention(log, original_destination, FORWARD_TO)
+                
                 # Forward email to the determined address
                 forward_success = await forward_email(
                     access_token, 
@@ -127,6 +130,9 @@ async def process_email(access_token, account, email_data, message_id):
                     # If forwarding to classified destination failed, try sending to original destination
                     print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Failed to forward to classified destination {FORWARD_TO}. Attempting to forward to original destination {original_destination}")
                     
+                    # Reset intervention flag for fallback routing
+                    add_to_log("apex_intervention", "false", log)
+                    
                     fallback_success = await forward_email(
                         access_token,
                         account,
@@ -172,6 +178,9 @@ async def process_email(access_token, account, email_data, message_id):
                 
                 # Attempt fallback forwarding to original destination
                 try:
+                    # No intervention in fallback case
+                    add_to_log("apex_intervention", "false", log)
+                    
                     fallback_success = await forward_email(
                         access_token,
                         account,
@@ -214,6 +223,9 @@ async def process_email(access_token, account, email_data, message_id):
         else:
             # APEX classification failed - implement fallback routing
             print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - APEX classification failed: {apex_response['message']}. Implementing fallback routing.")
+            # No intervention when falling back to original destination
+            add_to_log("apex_intervention", "false", log)
+            
             if not processed:
                 await handle_apex_failure_logging(
                     log, 
@@ -233,6 +245,9 @@ async def process_email(access_token, account, email_data, message_id):
         try:
             # Only attempt if we haven't processed yet
             if not processed:
+                # No intervention in critical error recovery
+                add_to_log("apex_intervention", "false", log)
+                
                 fallback_success = await forward_email(
                     access_token,
                     account,
@@ -288,6 +303,10 @@ async def handle_error_logging(log, forward_to, error_message, start_time):
         add_to_log("sts_class", "error", log)
         add_to_log("sts_routing", "error", log)
         
+        # Default to no intervention for error cases if not already set
+        if "apex_intervention" not in log:
+            add_to_log("apex_intervention", "false", log)
+        
         end_time = datetime.datetime.now()
         tat = (end_time - start_time).total_seconds()
         add_to_log("tat", tat, log)
@@ -319,6 +338,9 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
     try:
         # Always try to forward to original destination when APEX fails
         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: handle_apex_failure_logging - Attempting to forward to original destination {original_destination} due to APEX failure")
+        
+        # No intervention when falling back to original destination on APEX failure
+        add_to_log("apex_intervention", "false", log)
         
         forward_success = await forward_email(
             access_token,
@@ -504,3 +526,4 @@ def trigger_email_triage():
 
 if __name__ == '__main__':
     trigger_email_triage()
+    
