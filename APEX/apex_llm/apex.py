@@ -211,8 +211,11 @@ async def apex_categorise(text):
             
         # --> END APEX ACTION CHECK BLOCK 
         
+        # Store the original list of categories before prioritization
+        original_categories = json_output["classification"]
+        json_output["original_categories"] = original_categories
+        
         # --> START APEX PRIORITIZE BLOCK
-
         try:
             apex_prioritize_response = await apex_prioritize(text, json_output["classification"])
             print(type(json_output["classification"]))
