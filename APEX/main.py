@@ -55,6 +55,7 @@ async def process_email(access_token, account, email_data, message_id):
         # Get APEX classification - attempt to categorize the email
         try:
             apex_response = await apex_categorise(str(llm_text))
+            print(apex_response)
         except Exception as e:
             print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Error in APEX categorization: {str(e)}")
             # If categorization fails, prepare for fallback routing
