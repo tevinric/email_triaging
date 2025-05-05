@@ -288,8 +288,8 @@ async def apex_prioritize(text, category_list):
                     
                     You must evaluate the category list and use context AND the above priority list when selecting the most applicable single category.
                     
-                    Example1:  if the email categories are "Vehicle tracking", "Assist", "Claims", you must select "Vehicle tracking" as the final category based on the priority list.
-                    Example2:  if the email categories are "Assist", "Claims", "Refund Request", you must select "Claims" as the final category based on the priority list.
+                    Example1:  if the email categories are "vehicle tracking", "online/app", "claims", you must select "vehicle tracking" as the final category based on the priority list.
+                    Example2:  if the email categories are "document request", "claims", "refund request", you must select "claims" as the final category based on the priority list.
 
                 3. Provide a short explanation for the reson why you have chosen the final classification based on the EMAIL CONTEXT. 
 

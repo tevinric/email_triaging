@@ -1,14 +1,13 @@
 import sys
 import time
 import asyncio
-import uuid  # Added import for UUID generation
 from email_processor.email_client import get_access_token, fetch_unread_emails, forward_email, mark_email_as_read, force_mark_emails_as_read
 from apex_llm.apex import apex_categorise, apex_action_check
 from config import EMAIL_ACCOUNTS, EMAIL_FETCH_INTERVAL, DEFAULT_EMAIL_ACCOUNT
 from apex_llm.apex_logging import create_log, add_to_log, log_apex_success, log_apex_fail, insert_log_to_db, check_email_processed
 import datetime
 from apex_llm.apex_routing import ang_routings
-import base64
+
 
 processed_but_unread = set()
 
@@ -48,30 +47,7 @@ async def process_email(access_token, account, email_data, message_id):
                 else:
                     print("Script: main.py - Function: process_email - APEX classification not found in routing table. Forwarding to the default intended email address.")
                     FORWARD_TO = email_data['to']
-                    
                 original_sender = email_data['from']
-                original_cc = email_data['cc']
-                
-                # Generate interaction_id
-                interaction_id = str(uuid.uuid4())
-                # Add interaction_id to log
-                add_to_log("interaction_id", interaction_id, log)
-                # Add acknowledged field with default value 0
-                add_to_log("acknowledged", 0, log)
-                
-                # BASE64 ENCODE THE ORIGINAL DETAILS SO THAT THE CUSTOMER WILL NOT UNDERSTAND WHAT IT IS IN THE EMAIL TRAIL. THIS IS CREATING A STAMP FOR THE APEX POST PROCESSING AGENT TO EASILY GET THE ORIGINAL EMAIL DETAILS
-                original_sender_base64 = base64.b64encode(original_sender.encode()).decode()
-                original_cc_base64 = base64.b64encode(original_cc.encode()).decode()
-                # Encode interaction_id as base64
-                interaction_id_base64 = base64.b64encode(interaction_id.encode()).decode()
-                
-                stamp_text = f"""AI Forwarded message \n\n
-                'xrsid1': {original_sender_base64} \n
-                'xrsid2': {original_cc_base64} \n
-                'xrsid3': {interaction_id_base64} \n
-                """
-                
-                print(stamp_text)
                 
                 # Forward email
                 forward_success = await forward_email(
@@ -81,7 +57,7 @@ async def process_email(access_token, account, email_data, message_id):
                     original_sender, 
                     FORWARD_TO, 
                     email_data, 
-                    stamp_text
+                    "AI Forwarded message"
                 )
                 
                 if forward_success:
@@ -136,13 +112,6 @@ async def process_email(access_token, account, email_data, message_id):
 
 async def handle_error_logging(log, forward_to, error_message, start_time):
     """Helper function to handle error logging consistently"""
-    # Generate interaction_id if it doesn't exist
-    if "interaction_id" not in log:
-        log["interaction_id"] = str(uuid.uuid4())
-    # Add acknowledged field with default value 0 if it doesn't exist
-    if "acknowledged" not in log:
-        log["acknowledged"] = 0
-        
     log_apex_fail(log, error_message)
     add_to_log("apex_routed_to", forward_to, log)
     add_to_log("sts_read_eml", "error", log)
@@ -159,20 +128,6 @@ async def handle_error_logging(log, forward_to, error_message, start_time):
 async def handle_apex_failure_logging(log, email_data, apex_response, access_token, account, message_id, start_time):
     """Helper function to handle APEX failure logging consistently"""
     try:
-        # Generate interaction_id if it doesn't exist
-        if "interaction_id" not in log:
-            interaction_id = str(uuid.uuid4())
-            add_to_log("interaction_id", interaction_id, log)
-        else:
-            interaction_id = log["interaction_id"]
-            
-        # Add acknowledged field with default value 0 if it doesn't exist
-        if "acknowledged" not in log:
-            add_to_log("acknowledged", 0, log)
-        
-        # Prepare interaction_id for forwarding
-        interaction_id_base64 = base64.b64encode(interaction_id.encode()).decode()
-        
         # Try to forward to default address
         forward_success = await forward_email(
             access_token,
@@ -181,7 +136,7 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
             email_data['from'],
             email_data['to'],
             email_data,
-            f"AI Forwarded message by default due to APEX LLM error\n\n'xrsid3': {interaction_id_base64}"
+            "AI Forwarded message by default due to APEX LLM error"
         )
         
         if forward_success:
@@ -252,3 +207,4 @@ def trigger_email_triage():
 
 if __name__ == '__main__':
     trigger_email_triage()
+    

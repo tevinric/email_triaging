@@ -78,7 +78,7 @@ async def force_mark_emails_as_read(access_token: str, user_id: str, message_ids
         results[message_id] = success
     return results
 
-async def forward_email(access_token, user_id, message_id, original_sender, forward_to, email_data, forwardMsg):
+async def forward_email(access_token, user_id, message_id, original_sender, forward_to, email_data, forwardMsg=""):
     
     headers = {
         'Authorization': f'Bearer {access_token}',
@@ -164,7 +164,7 @@ async def forward_email(access_token, user_id, message_id, original_sender, forw
                                 ],
                                 "body": {
                                     "contentType": forward_message['body']['contentType'],
-                                    "content": f"{forwardMsg}\n\n{forward_message['body']['content']}"
+                                    "content": f"{forward_message['body']['content']}"
                                 }
                             }
 
@@ -224,7 +224,7 @@ async def forward_email(access_token, user_id, message_id, original_sender, forw
                         ],
                         "body": {
                             "contentType": forward_message['body']['contentType'],
-                            "content": f"{forwardMsg}\n\n{forward_message['body']['content']}"
+                            "content": f"{forward_message['body']['content']}"
                         }
                     }
 
