@@ -211,9 +211,14 @@ async def apex_categorise(text):
             
         # --> END APEX ACTION CHECK BLOCK 
         
-        # Store the original list of categories before prioritization
-        original_categories = json_output["classification"]
-        json_output["original_categories"] = original_categories
+        # IMPORTANT: Store the original list of categories before prioritization
+        # This ensures we capture the top 3 categories before prioritization changes it to a single category
+        if isinstance(json_output["classification"], list):
+            top_categories = json_output["classification"].copy()
+            json_output["top_categories"] = top_categories
+        else:
+            # If not a list (unexpected), store as is
+            json_output["top_categories"] = json_output["classification"]
         
         # --> START APEX PRIORITIZE BLOCK
         try:
