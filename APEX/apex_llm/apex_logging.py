@@ -106,15 +106,25 @@ def log_apex_success(apex_response, log):
         add_to_log("apex_sentiment", message.get('sentiment', 'error'), log)
         add_to_log("apex_cost_usd", message.get('apex_cost_usd', 0.0), log)
         
-        # Store the top 3 categories if available
-        original_categories = message.get('original_categories', [])
-        if isinstance(original_categories, list) and original_categories:
+        # Store the top 3 categories
+        top_categories = message.get('top_categories', [])
+        
+        # Handle different possible formats of top_categories
+        if isinstance(top_categories, list):
             # Convert list to string representation for storage
-            top_categories_str = ', '.join(original_categories)
+            top_categories_str = ', '.join(top_categories)
             add_to_log("apex_top_categories", top_categories_str, log)
+        elif isinstance(top_categories, str):
+            # If it's already a string, store directly
+            add_to_log("apex_top_categories", top_categories, log)
         else:
-            # If not available, set a default or empty value
-            add_to_log("apex_top_categories", "", log)
+            # If format is unexpected, try to convert to string
+            try:
+                top_categories_str = str(top_categories)
+                add_to_log("apex_top_categories", top_categories_str, log)
+            except:
+                # If even that fails, set empty
+                add_to_log("apex_top_categories", "", log)
             
     except Exception as e:
         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: apex_logging.py - Function: log_apex_success - Error logging APEX success: {str(e)}")
