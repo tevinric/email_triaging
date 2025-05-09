@@ -106,19 +106,19 @@ async def apex_categorise(text):
 
                                 1.Classify the email content according to the classification categories below. You must return a python list of the top 3 possible categories that the email context aligns to (only if one or more categories apply). The list must always have the top related category as the first element with the third element (if applicable) being the least related. Follow the chronological order of the email conversation when providing the classification and ensure that the latest response is used for classification. Strictly use the following category mapping only:
 
-                                    amendments: The following constitue categorisation as ammendments:                                   
+                                    amendments: The following scenarios constitute an ammendment to a policy:                                   
                                                 * Add, change, or remove individual risk items or the details of a policy. This includes changes to Risk/Physical address, contact details, policy holder details (name, surname, gender, marital status, etc.), household members details, commencement date, passport details, debit order details (banking details, debit order date), banking deduction details, cashback details, premium waivers, deceased customer details or information. This also includes the cancellation or removal of individual risk items (e.g., a vehicle, building, or home contents item) from a policy whilst other risk items are kept on the policy.
                                                 * Add, change, or remove a vehicle or vehicle details from a policy. This includes add/change/removal of Vehicle details, vehicle driver details, vehicle cover details (insurance cover, cover type, vehicle excess, car hire, insured value, etc), vehicle use details (private, business, etc), vehicle parking (day or night) details, vehicle finance details, general cover queries.
                                                 * Buildings quote,  Add change or remove Building details, buildings insured value, geyser add, remove or updates, buildings finance corrections, commencement date details, general  buildings cover queries.
                                                 * Add change or remove home contents or home content details, contents insured value, security updates, general home contents cover queries.
                                                 * Add change or remove portable possesions or portable possession items details (These include small insurable items such as laptops, tablets, jewellery, cellphones, cameras, etc).
-                                                * Email requesting items to be insured at different addresses (including car/ building / home contents). A split risk refers to the need for a customer to insure goods at more than one residential address.
+                                                * Email requesting items to be insured at different addresses including car/ building / home contents, i.e a split risk. A split risk refers to the need for a customer to insure goods at more than one residential address.
                                      
-                                    vehicle tracking: Email containing a shared tracking device fitment certification by the sender for Capturing of vehicle inspection details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate or vehicle fitness certificate or any email related to vehicle tracking device(s). Emails for document requests or documents that are addressed to Autogen Tracking <tracking@autogen.co.za> will be classified as Vehicle tracking unless there is a specific request for something else.
+                                    vehicle tracking: Email containing a shared tracking device fitment certification by the sender for capturing of vehicle inspection details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate or vehicle fitness certificate or any email related to vehicle tracking device(s). Emails for document requests or documents that are addressed to Autogen Tracking <tracking@autogen.co.za> will be classified as Vehicle tracking unless there is a specific request for something else.
 
-                                    bad service/experience: Emails about compliants and negative feedback emails from customers indicating bad service or experience related to our products or services.
+                                    bad service/experience: Emails about complaints and negative feedback emails from customers indicating bad service or experience related to our products or services.
                                     
-                                    claims: Emails regarding capturing a insurance claim against a policy or following up on an existing insurance claim that has been submitted. These emails will entail the customer making an insurance claim against their policy. The claim can be for a loss/damage to any of their insured risks or services which incldue vehicles, building, home contents, portable possessions, geysers etc.
+                                    claims: Emails regarding capturing of an insurance claim against a policy or following up on an existing insurance claim that has been submitted. These emails will entail the customer making an insurance claim against their policy. The claim can be for a loss/damage to any of their insured risks or services which incldue vehicles, building, home contents, portable possessions, geysers etc.
                                     
                                     refund request: Request from email sender for a refund related to a new or existing policy or related services. Including new refund request or follow up on an existing request.
                                     
@@ -131,12 +131,12 @@ async def apex_categorise(text):
                                     request for quote: Emails from the customer requesting an insurance quotation or a request to undergo the quotation/underwriting process. A quotation will generally provide the premium the customer must pay for insuring one or more risk items.
                                     
                                     debit order switch: Email requests from Banks/Banking institutions to change the banking details of the policy holder. This category applies to a bank requesting the insurance company to change the debit order details for the policy holder.
-                                    
+                                                                        
                                     previous insurance checks/queries : Email requests or queries related to a Previous Insurance (PI) check, verification or validation.
-                                    
-                                    assist: Emails requsting assistance, support or mention of a lack of assistance that would prompt assistance to be offered. This will include general queries that do not fall into any of the above categories.
 
-                                    connex test:  This classification must only used when the email contains the phrase "connex test". General test mails that do not contain the word Connex must be classified as Other.
+                                    assist: Emails requsting roadside assistance, towing assistance or home assist.  Roadside assistance includes 24/7 support for assistance with issues like flat tyres, flat/dead batteries and locked keys requiring locksmith services. Towing assistance includes support for towing s vehicle to the nearest place of safety or a designated repairer. Home assist includes request for assitance with a home emergency where the customer needs urgent help from the services of a plumber, electrician, locksmith or glazier (network of home specialists). 
+                                                                        
+                                    Email requests for previous insurance (PI) checks or insurance admin checks must be classifed as "other".            
                                     
                                     If the email cannot be classified into one of the above categories, please classify it as "other". 
                                     
@@ -224,9 +224,9 @@ async def apex_categorise(text):
         try:
             apex_prioritize_response = await apex_prioritize(text, json_output["classification"])
             print(type(json_output["classification"]))
-            print(json_output["classification"])
+            print("All Categories: " ,json_output["classification"])
             print("First element: ",json_output["classification"][0])
-            print(apex_prioritize_response["message"]["final_category"])
+            print("Final Category: ", apex_prioritize_response["message"]["final_category"])
             
             # CHECK IF APEX PRIORITIZE WAS SUCCESSFUL
             if apex_prioritize_response["response"] == "200":
@@ -275,8 +275,8 @@ async def apex_prioritize(text, category_list):
                  "content": """You are an intelligent assistant specialized in analyzing the text of an email and a list of 3 possible categories that the the email falls into. Your task is to:
                  
                 Instructions:
-                1. Use the provided email context and the list of possible categories to make a final decision on a single most appropriate category. The final decisoin must be based on the context of the email.
-                2. When making the final decision, consider the following category priorty list when making your decision (1 is highest priortity): 
+                1. Use the provided email context and the priority list of categories to make a final decision on a single most appropriate category. The final decision must be based on the context of the email as the primary factor. Only refer to the below priority list if there is ambiguity or uncertainty in determining the single most appropriate category.
+                2. Only if there is ambiguity and more than one possible category for the email context, then you must consider the following category priority list when making your decision (1 is highest priority): 
                     
                     Priority | Category
                     ---------|---------------------------
@@ -294,11 +294,12 @@ async def apex_prioritize(text, category_list):
                     12       | other
                     13       | previous insurance checks/queries
                     
-                    You must evaluate the category list and use context AND the above priority list when selecting the most applicable single category.
+                    You must evaluate the category list and use the email context AND the above priority list when selecting the most applicable single category.
                     
                     Example1:  if the email categories are "vehicle tracking", "online/app", "claims", you must select "vehicle tracking" as the final category based on the priority list.
                     Example2:  if the email categories are "document request", "claims", "refund request", you must select "claims" as the final category based on the priority list.
-
+                    Example3:  if the email categories are "document_request", you must select "document_request" as the final category based on the priority list.
+                    
                 3. Provide a short explanation for the reson why you have chosen the final classification based on the EMAIL CONTEXT. 
 
                     Use the following JSON format for your response:
