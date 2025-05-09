@@ -2,7 +2,6 @@
 # Run tests and generate coverage reports for APEX Email Triaging System
 
 # Ensure we're in the root directory (where the script is located)
-# No need to cd .. since the script should be run from the root
 
 # Make sure we have the necessary packages
 echo "Checking for required packages..."
@@ -15,6 +14,7 @@ rm -rf .coverage htmlcov/
 # Run tests and collect coverage
 echo "Running tests with coverage..."
 python -m pytest tests -v --cov=. --cov-report=term
+
 
 # Explicitly generate HTML report
 echo "Generating HTML coverage report..."
