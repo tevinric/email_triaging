@@ -311,11 +311,20 @@ async def apex_prioritize(text, category_list):
             model=deployment,
             messages=[
                 {"role": "system",
-                 "content": """You are an intelligent assistant specialized in analyzing the text of an email and a list of 3 possible categories that the the email falls into. Your task is to:
-                 
-                Instructions:
-                1. Use the provided email context and the priority list of categories to make a final decision on a single most appropriate category. The final decision must be based on the context of the email as the primary factor. Only refer to the below priority list if there is ambiguity or uncertainty in determining the single most appropriate category.
-                2. Only if there is ambiguity and more than one possible category for the email context, then you must consider the following category priority list when making your decision (1 is highest priority): 
+                 "content": """You are an intelligent assistant specialized in analyzing email content and a list of possible categories that the email was classified into. Your task is to determine the single most appropriate final category from the list.
+
+                IMPORTANT: This is a two-step decision process:
+
+                STEP 1: EVALUATE THE FIRST CATEGORY IN THE LIST
+                - The list of categories is in order of relevance as determined by the initial classifier.
+                - The first category in the list is the primary classification.
+                - CAREFULLY examine the latest email in the thread to determine if this first category clearly aligns with the actual request or topic of the latest email.
+                - If the first category in the list clearly matches the latest email's content and purpose, SELECT IT AS THE FINAL CATEGORY. Do not proceed to Step 2.
+                - The latest email in the thread is always the most important for making this determination.
+
+                STEP 2: ONLY IF NECESSARY - CONSIDER MULTIPLE CATEGORIES
+                - ONLY proceed to this step if the first category does NOT clearly match the latest email content.
+                - If multiple categories seem equally applicable, or if there's genuine ambiguity, THEN use the priority list below to make your final decision:
                     
                     Priority | Category
                     ---------|---------------------------
@@ -332,25 +341,38 @@ async def apex_prioritize(text, category_list):
                     11       | document request
                     12       | other
                     13       | previous insurance checks/queries
-                    
-                    You must evaluate the category list and use the email context AND the above priority list when selecting the most applicable single category.
-                    
-                    Example1:  if the email categories are "vehicle tracking", "online/app", "claims", you must select "vehicle tracking" as the final category based on the priority list.
-                    Example2:  if the email categories are "document request", "claims", "refund request", you must select "claims" as the final category based on the priority list.
-                    Example3:  if the email categories are "document_request", you must select "document_request" as the final category based on the priority list.
-                    
-                3. Provide a short explanation for the reson why you have chosen the final classification based on the EMAIL CONTEXT. 
+                
+                EXAMPLES:
 
-                    Use the following JSON format for your response:
-                    {
-                        "final_category": "answer",
-                        "rsn_classification": "answer"
-                    } """
-                    
+                Example 1: CLEAR MATCH - KEEP FIRST CATEGORY
+                - Email categories provided: ["document request", "online/app", "amendments"]
+                - Latest email clearly asks for policy documents
+                - Decision: Select "document request" as final category
+                - Explanation: The first category clearly matches the email content, so we keep it regardless of priority list
+
+                Example 2: GENUINE AMBIGUITY - USE PRIORITY LIST
+                - Email categories provided: ["claims", "vehicle tracking", "amendments"]  
+                - Latest email discusses both tracking device installation and a vehicle claim with equal emphasis
+                - Decision: Select "vehicle tracking" as final category
+                - Explanation: Since both are equally applicable, we use the priority list (vehicle tracking is priority 3, claims is priority 7)
+
+                Example 3: FIRST CATEGORY DOESN'T MATCH - FIND CORRECT ONE
+                - Email categories provided: ["other", "amendments", "document request"]
+                - Latest email clearly requests a change to the customer's vehicle details
+                - Decision: Select "amendments" as final category
+                - Explanation: The first category doesn't match the content, but "amendments" clearly does
+                
+                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT.
+
+                Use the following JSON format for your response:
+                {
+                    "final_category": "answer",
+                    "rsn_classification": "answer"
+                }"""
                 },
                 {
                     "role": "user",
-                    "content": f"Analyze this email chain and the list of categories that this email applies to provide a single category classification for the email based on the email context and the provided priorty list:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
+                    "content": f"Analyze this email chain and the list of categories that this email applies to provide a single category classification for the email based primarily on the content of the latest email:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
                 }
             ],
             response_format={"type": "json_object"},
