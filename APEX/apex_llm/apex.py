@@ -47,14 +47,21 @@ async def apex_action_check(text):
                  "content": """You are an intelligent assistant specialized in analyzing email chains to determine if action is required. Focus exclusively on the latest email in the chain and determine if it requires any action, response, or follow-up.
 
                     Instructions:
-                    1. Look only at the most recent email in the chain (usually at the top).
-                    2. Check if there are any:
-                    - Direct questions that need answers
-                    - Requests for information or documents
-                    - Tasks that need to be performed
-                    - Issues that need resolution
-                    - Any other items requiring response or action
-                    3. Respond with only "yes" if action is needed, "no" if no action is needed.
+                    1. IMPORTANT: Identify the latest email in the chain. In most email formats:
+                       - The latest email is typically at the top or beginning of the thread
+                       - It often has the most recent timestamp
+                       - It may be indicated by being least indented or not having ">" or other quote markers
+                    
+                    2. Look ONLY at the most recent email in the chain and check if there are any:
+                       - Direct questions that need answers
+                       - Requests for information or documents
+                       - Tasks that need to be performed
+                       - Issues that need resolution
+                       - Any other items requiring response or action
+                    
+                    3. DISREGARD the content of previous emails in the thread when determining if action is needed - only use the latest message.
+                    
+                    4. Respond with only "yes" if action is needed, "no" if no action is needed.
 
                     The output must be in the following JSON format:
                     {"action_required": "yes"} or {"action_required": "no"}"""
@@ -102,9 +109,9 @@ async def apex_categorise(text):
             model=deployment,  
             messages=[  
                 {"role": "system",
-                "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of deinfed tasks. You must accomplish the following list of tasks: 
+                "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of defined tasks. You must accomplish the following list of tasks: 
 
-                                1.Classify the email content according to the classification categories below. You must return a python list of the top 3 possible categories that the email context aligns to (only if one or more categories apply). The list must always have the top related category as the first element with the third element (if applicable) being the least related. Follow the chronological order of the email conversation when providing the classification and ensure that the latest response is used for classification. Strictly use the following category mapping only:
+                                1. Classify the email content according to the classification categories below. You must return a python list of the top 3 possible categories that the email context aligns to (only if one or more categories apply). The list must always have the top related category as the first element with the third element (if applicable) being the least related. Follow the chronological order of the email conversation when providing the classification and ensure that the latest response is used for classification. Strictly use the following category mapping only:
 
                                     amendments: The following scenarios constitute an ammendment to a policy:                                   
                                                 * Add, change, or remove individual risk items or the details of a policy. This includes changes to Risk/Physical address, contact details, policy holder details (name, surname, gender, marital status, etc.), household members details, commencement date, passport details, debit order details (banking details, debit order date), banking deduction details, cashback details, premium waivers, deceased customer details or information. This also includes the cancellation or removal of individual risk items (e.g., a vehicle, building, or home contents item) from a policy whilst other risk items are kept on the policy.
@@ -140,9 +147,9 @@ async def apex_categorise(text):
                                     
                                     Do not use any classifications, except for those above.
  
-                                2.Provide a short explanation for the classification in one sentence only.
+                                2. Provide a short explanation for the classification in one sentence only.
                                 
-                                3.Determine if any action is required based on the email content. Use the following instructions to help determine of there is an action required. 
+                                3. Determine if any action is required based on the email content. Use the following instructions to help determine of there is an action required. 
                                     a. Focus exclusively on the latest email in the chain.
                                     b. Identify if there are any requests, questions, or tasks in the latest email that require a response or action.
                                     c. If the latest email indicates that action is required, respond with "yes". Otherwise, respond with "no".
@@ -150,13 +157,40 @@ async def apex_categorise(text):
                                     e. Do not use any other classification other than "yes" or "no" for action required.
                                     f. Do not use any other classification other than the ones provided above for classification.
                                     
-                                4.Classify the sentiment of the email as Positive, Neutral, or Negative. Only classify sentiment when the customer expresses an apparent sentiment towards the products or services offered by the company. Positive to be used if the client expresses satisfaction or offers a compliment on service received. If there is not apparent sentiment then use Neutral.
+                                4. Classify the sentiment of the email as Positive, Neutral, or Negative. Only classify sentiment when the customer expresses an apparent sentiment towards the products or services offered by the company. Positive to be used if the client expresses satisfaction or offers a compliment on service received. If there is not apparent sentiment then use Neutral.
 
-                                IMPORTANT POINTS TO CONSIDER: 
-                                - Email threads can be long and complex. You must focus on the latest email in the thread and use that email to classify the email.
-                                - The classification must be based on the email context and not on the subject line alone. Continued email threads may have the same subject line throughout the thread but the conversation topic may change as the conversation progresses. 
-                                - You may use the older messages in the email thread for global context but the classification must be based on the lastest email. If the latest email is very short and you are not able to gain enough context from the latest email alone, then ONLY may you consider using the previous messages in the thread. 
-                                - The provided context will always be provided on chronological order. The latest email will always be the first message in the context.
+                                IMPORTANT GUIDELINES FOR EMAIL THREAD ANALYSIS:
+                                
+                                1. IDENTIFYING THE LATEST EMAIL:
+                                   - The latest email will always be the first message in the provided content.
+                                   - It may be visually separated from previous messages in the thread.
+                                   - It will have the most recent timestamp.
+                                   - In many email formats, older messages are indented or preceded by ">" or other quote markers.
+
+                                2. CLASSIFICATION PRIORITY:
+                                   - ALWAYS prioritize the content of the latest email for classification, even if it's brief.
+                                   - The subject line should be considered but given lower priority than the actual message content.
+                                   - When the latest email clearly indicates a purpose (e.g., "Please send me my policy document"), 
+                                     use that for classification, regardless of the subject line or previous messages.
+
+                                3. USING CONTEXT FROM PREVIOUS MESSAGES:
+                                   - Only reference previous messages in the thread if:
+                                     a) The latest email is very brief (e.g., "Please do this for me" or "Can you help with this?")
+                                     b) The latest email explicitly references previous context (e.g., "As discussed below...")
+                                     c) The latest email would be ambiguous without thread context
+                                
+                                4. EXAMPLES OF PROPER THREAD ANALYSIS:
+                                   - Example 1: Latest email says "Please send me my policy document" but thread is about a claim
+                                     → Classify as "document request" (prioritize latest message)
+                                   - Example 2: Latest email says "Please help with this" and previous message discusses vehicle tracking
+                                     → Use thread context to classify as "vehicle tracking"
+                                   - Example 3: Latest email discusses multiple topics
+                                     → Prioritize based on the main request in the latest email
+                                
+                                5. COMMON PITFALLS TO AVOID:
+                                   - Don't be misled by a subject line that doesn't match the latest email content
+                                   - Don't classify based on previous messages if the latest email has changed the topic
+                                   - Don't assume the topic hasn't changed just because it's the same thread
 
                                 Ensure your output conforms to the following JSON format with the following keys:
                                 {  
