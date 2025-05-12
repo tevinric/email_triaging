@@ -135,9 +135,7 @@ async def apex_categorise(text):
                                     previous insurance checks/queries : Email requests or queries related to a Previous Insurance (PI) check, verification or validation.
 
                                     assist: Emails requsting roadside assistance, towing assistance or home assist.  Roadside assistance includes 24/7 support for assistance with issues like flat tyres, flat/dead batteries and locked keys requiring locksmith services. Towing assistance includes support for towing s vehicle to the nearest place of safety or a designated repairer. Home assist includes request for assitance with a home emergency where the customer needs urgent help from the services of a plumber, electrician, locksmith or glazier (network of home specialists). 
-                                                                        
-                                    Email requests for previous insurance (PI) checks or insurance admin checks must be classifed as "other".            
-                                    
+                                                                           
                                     If the email cannot be classified into one of the above categories, please classify it as "other". 
                                     
                                     Do not use any classifications, except for those above.
@@ -149,11 +147,18 @@ async def apex_categorise(text):
                                     b. Identify if there are any requests, questions, or tasks in the latest email that require a response or action.
                                     c. If the latest email indicates that action is required, respond with "yes". Otherwise, respond with "no".
                                     d. All emails classified as Vehicle tracking will have an action required.
+                                    e. Do not use any other classification other than "yes" or "no" for action required.
+                                    f. Do not use any other classification other than the ones provided above for classification.
                                     
                                 4.Classify the sentiment of the email as Positive, Neutral, or Negative. Only classify sentiment when the customer expresses an apparent sentiment towards the products or services offered by the company. Positive to be used if the client expresses satisfaction or offers a compliment on service received. If there is not apparent sentiment then use Neutral.
 
-                                Ensure your output conforms to the following JSON format with the following keys:
+                                IMPORTANT POINTS TO CONSIDER: 
+                                - Email threads can be long and complex. You must focus on the latest email in the thread and use that email to classify the email.
+                                - The classification must be based on the email context and not on the subject line alone. Continued email threads may have the same subject line throughout the thread but the conversation topic may change as the conversation progresses. 
+                                - You may use the older messages in the email thread for global context but the classification must be based on the lastest email. If the latest email is very short and you are not able to gain enough context from the latest email alone, then ONLY may you consider using the previous messages in the thread. 
+                                - The provided context will always be provided on chronological order. The latest email will always be the first message in the context.
 
+                                Ensure your output conforms to the following JSON format with the following keys:
                                 {  
                                 "classification": ["category1", "category2", "category3"],  
                                 "rsn_classification": "answer",
