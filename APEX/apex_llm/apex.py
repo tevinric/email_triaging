@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
 from openai import AzureOpenAI
 import json
 import os
@@ -13,7 +12,6 @@ from config import (
 
 FX_RATE = 1
 
-load_dotenv()
 
 # Initialize the primary client - keep variable name as 'client' for compatibility
 client = AzureOpenAI(
