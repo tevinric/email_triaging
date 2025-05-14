@@ -18,7 +18,7 @@ spec:
         - name: #{ApplicationName}#
           image: #{RegistryAddress}#/#{ImageName}#:#{Version}#
           env:
-          #OPENAI CREDENTIALS
+          # PRIMARY OPENAI CREDENTIALS
           - name: AZURE_OPENAI_KEY
             valueFrom:
               secretKeyRef:
@@ -30,6 +30,19 @@ spec:
               secretKeyRef:
                 name: apex-credentials
                 key: AZURE_OPENAI_ENDPOINT
+
+          # BACKUP OPENAI CREDENTIALS
+          - name: AZURE_OPENAI_BACKUP_KEY
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_OPENAI_BACKUP_KEY
+
+          - name: AZURE_OPENAI_BACKUP_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_OPENAI_BACKUP_ENDPOINT
           
           #SQL CREDENTIALS
           - name: SQL_SERVER
