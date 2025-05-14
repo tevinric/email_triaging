@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 import json
@@ -50,7 +50,7 @@ async def call_openai_with_fallback(deployment, messages, temperature=0.1, subje
     """
     global backup_client
     subject_info = f"[Subject: {subject}] " if subject else ""
-    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     # Try with primary client first
     try:
@@ -99,7 +99,7 @@ async def apex_action_check(text, subject=None):
     Specialized function to determine if an action is required based on the latest email in the thread.
     Uses the smaller GPT-4-mini model for efficiency.
     """
-    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
         # Clean and escape the input text
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
@@ -164,7 +164,7 @@ async def apex_categorise(text, subject=None):
     Main function to categorize emails and determine various attributes including action required.
     Uses the full GPT-4 model for comprehensive analysis.
     """
-    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     subject_info = f"[Subject: {subject}] " if subject else ""
     
     try: 
@@ -374,7 +374,7 @@ async def apex_prioritize(text, category_list, subject=None):
     """
     Specialized agent to validate the apex classification and priortise the final classification based on a priorty list and the context of the email.
     """
-    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     subject_info = f"[Subject: {subject}] " if subject else ""
     
     try:
