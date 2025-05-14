@@ -97,7 +97,7 @@ async def call_openai_with_fallback(deployment, messages, temperature=0.1, subje
 async def apex_action_check(text, subject=None):
     """
     Specialized function to determine if an action is required based on the latest email in the thread.
-    Uses the smaller GPT-4-mini model for efficiency.
+    Uses the smaller GPT-4o-mini model for efficiency.
     """
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
@@ -144,12 +144,19 @@ async def apex_action_check(text, subject=None):
 
         completion_tokens = response.usage.completion_tokens
         prompt_tokens = response.usage.prompt_tokens
+        total_tokens = prompt_tokens + completion_tokens
         
         cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE)
                 
         json_output.update({
             "apex_cost_usd": round(cost_usd, 5),
-            "deployment_used": response.client_used
+            "region_used": "main" if response.client_used == "primary" else "backup",
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "cached_tokens": 0  # Default to 0 for now
+            }
         })
         
         return {"response": "200", "message": json_output}
@@ -157,7 +164,6 @@ async def apex_action_check(text, subject=None):
     except Exception as e:
         print(f">> {timestamp} Error in apex_action_check: {str(e)}")
         return {"response": "500", "message": str(e)}
-
 
 async def apex_categorise(text, subject=None):
     """
@@ -270,8 +276,31 @@ async def apex_categorise(text, subject=None):
             "content": f"Please summarize the following text:\n\n{cleaned_text}"}
         ]
         
+        # Initialize token tracking variables
+        gpt_4o_prompt_tokens = 0
+        gpt_4o_completion_tokens = 0
+        gpt_4o_total_tokens = 0
+        gpt_4o_cached_tokens = 0
+        
+        gpt_4o_mini_prompt_tokens = 0
+        gpt_4o_mini_completion_tokens = 0
+        gpt_4o_mini_total_tokens = 0
+        gpt_4o_mini_cached_tokens = 0
+        
+        # Track which region we're using (main by default)
+        region_used = "main"
+        
         # Use the helper function for API call with fallback
         response = await call_openai_with_fallback(deployment, messages, temperature=0.2, subject=subject)
+        
+        # Track token usage from main GPT-4o classification
+        gpt_4o_prompt_tokens = response.usage.prompt_tokens
+        gpt_4o_completion_tokens = response.usage.completion_tokens
+        gpt_4o_total_tokens = gpt_4o_prompt_tokens + gpt_4o_completion_tokens
+        
+        # Track region used for primary classification
+        if response.client_used == "backup":
+            region_used = "backup"
         
         # JSONIFY THE APEX CLASSIFICATION OUTPUT
         try:
@@ -281,9 +310,6 @@ async def apex_categorise(text, subject=None):
             completion_tokens = response.usage.completion_tokens
             prompt_tokens = response.usage.prompt_tokens
             apex_cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
-            
-            # Add info about which deployment was used
-            json_output["deployment_used"] = response.client_used
  
         except json.JSONDecodeError as je:
             print(f">> {timestamp} JSON parsing error in categorise: {je} {subject_info}")
@@ -298,8 +324,16 @@ async def apex_categorise(text, subject=None):
             if action_check_response["response"] == "200":
                 action_check_result = action_check_response["message"]["action_required"]
                 
-                # ADD THE COST FOR THE APEX ACTION CHECK TO THE TOTAL COST - THIS WILL NEED TO BE UPDATED WHETHER THE ACTION CHECK IS SUCCESSFUL OR NOT
+                # ADD THE COST FOR THE APEX ACTION CHECK TO THE TOTAL COST
                 apex_cost_usd += action_check_response["message"]["apex_cost_usd"]
+                
+                # Track token usage from action check (GPT-4o-mini)
+                if "token_usage" in action_check_response["message"]:
+                    token_usage = action_check_response["message"]["token_usage"]
+                    gpt_4o_mini_prompt_tokens += token_usage.get("prompt_tokens", 0)
+                    gpt_4o_mini_completion_tokens += token_usage.get("completion_tokens", 0)
+                    gpt_4o_mini_total_tokens += token_usage.get("total_tokens", 0)
+                    gpt_4o_mini_cached_tokens += token_usage.get("cached_tokens", 0)
 
                 # CHECK IF THE APEX ACTION CHECK AGENT RESULT IS DIFFERENT FROM THE APEX CLASSIFICATION AGENT 
                 if action_check_result != json_output["action_required"]:
@@ -336,6 +370,14 @@ async def apex_categorise(text, subject=None):
                 # ADD THE COST FOR THE APEX PRIORITIZE TO THE TOTAL COST
                 apex_cost_usd += apex_prioritize_response["message"]["apex_cost_usd"]
                 
+                # Track token usage from prioritization (GPT-4o-mini)
+                if "token_usage" in apex_prioritize_response["message"]:
+                    token_usage = apex_prioritize_response["message"]["token_usage"]
+                    gpt_4o_mini_prompt_tokens += token_usage.get("prompt_tokens", 0)
+                    gpt_4o_mini_completion_tokens += token_usage.get("completion_tokens", 0)
+                    gpt_4o_mini_total_tokens += token_usage.get("total_tokens", 0)
+                    gpt_4o_mini_cached_tokens += token_usage.get("cached_tokens", 0)
+                
                 # UPDATE THE APEX CLASSIFICATION RESULT AND REASON FOR CLASSIFICATION WITH THE PRIORITIZED AGENT RESULTS
                 original_category = json_output["classification"][0] if isinstance(json_output["classification"], list) else json_output["classification"]
                 final_category = apex_prioritize_response["message"]["final_category"].lower()
@@ -358,7 +400,19 @@ async def apex_categorise(text, subject=None):
 
         # --> END OF APEX PRIORITIZE BLOCK
 
-        json_output.update({"apex_cost_usd": round(apex_cost_usd, 5)})
+        # Add token tracking information to the response
+        json_output.update({
+            "apex_cost_usd": round(apex_cost_usd, 5),
+            "region_used": region_used,
+            "gpt_4o_prompt_tokens": gpt_4o_prompt_tokens,
+            "gpt_4o_completion_tokens": gpt_4o_completion_tokens,
+            "gpt_4o_total_tokens": gpt_4o_total_tokens,
+            "gpt_4o_cached_tokens": gpt_4o_cached_tokens,
+            "gpt_4o_mini_prompt_tokens": gpt_4o_mini_prompt_tokens,
+            "gpt_4o_mini_completion_tokens": gpt_4o_mini_completion_tokens,
+            "gpt_4o_mini_total_tokens": gpt_4o_mini_total_tokens,
+            "gpt_4o_mini_cached_tokens": gpt_4o_mini_cached_tokens
+        })
         
         print(f">> {timestamp} APEX classification complete: Category={json_output['classification']}, Action={json_output['action_required']}, Sentiment={json_output['sentiment']} {subject_info}")
         
@@ -367,7 +421,6 @@ async def apex_categorise(text, subject=None):
     except Exception as e: 
         print(f">> {timestamp} ERROR in APEX classification: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
-
 
 # LLM AGENT TO CHECK IF THE CLASSIFICATION HAS BEEN DONE CORRECTLTY AND ALIGNS WITH CATEGORISATION PRIORITIES
 async def apex_prioritize(text, category_list, subject=None):
@@ -460,12 +513,19 @@ async def apex_prioritize(text, category_list, subject=None):
 
         completion_tokens = response.usage.completion_tokens
         prompt_tokens = response.usage.prompt_tokens
+        total_tokens = prompt_tokens + completion_tokens
         
-        cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
+        cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
                 
         json_output.update({
             "apex_cost_usd": round(cost_usd, 5),
-            "deployment_used": response.client_used
+            "region_used": "main" if response.client_used == "primary" else "backup",
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "cached_tokens": 0  # Default to 0 for now
+            }
         })
         
         return {"response": "200", "message": json_output}
@@ -473,7 +533,6 @@ async def apex_prioritize(text, category_list, subject=None):
     except Exception as e:
         print(f">> {timestamp} Error in apex_prioritize: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
-
 
 
 # Synchronous versions for backward compatibility
