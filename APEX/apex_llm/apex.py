@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from openai import AzureOpenAI
 import json
 import os
@@ -12,6 +13,7 @@ from config import (
 
 FX_RATE = 1
 
+load_dotenv()
 
 # Initialize the primary client - keep variable name as 'client' for compatibility
 client = AzureOpenAI(
@@ -30,7 +32,7 @@ model_costs = {"gpt-4o-mini": {"prompt_token_cost_pm":0.15,
                             "completion_token_cost_pm":15},
                }
 
-async def call_openai_with_fallback(deployment, messages, temperature=0.1):
+async def call_openai_with_fallback(deployment, messages, temperature=0.1, subject=None):
     """
     Helper function to call OpenAI API with fallback to backup client.
     
@@ -38,27 +40,34 @@ async def call_openai_with_fallback(deployment, messages, temperature=0.1):
         deployment (str): The model deployment to use
         messages (list): The messages to send to the API
         temperature (float): The temperature parameter for the API call
+        subject (str): Optional subject line for better logging
         
     Returns:
-        The API response
+        The API response with additional field indicating which client was used
         
     Raises:
         Exception if both primary and backup clients fail
     """
     global backup_client
+    subject_info = f"[Subject: {subject}] " if subject else ""
+    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     # Try with primary client first
     try:
-        return await asyncio.to_thread(
+        print(f">> {timestamp} Using PRIMARY OpenAI deployment ({deployment}) {subject_info}")
+        response = await asyncio.to_thread(
             client.chat.completions.create,
             model=deployment,
             messages=messages,
             response_format={"type": "json_object"},
             temperature=temperature
         )
+        print(f">> {timestamp} PRIMARY OpenAI call successful {subject_info}")
+        response.client_used = "primary"
+        return response
     except Exception as primary_error:
-        print(f"Primary AzureOpenAI client failed: {str(primary_error)}")
-        print("Trying backup AzureOpenAI client")
+        print(f">> {timestamp} PRIMARY OpenAI client failed: {str(primary_error)} {subject_info}")
+        print(f">> {timestamp} Attempting BACKUP OpenAI deployment ({deployment}) {subject_info}")
         
         # Initialize backup client if not already done
         if backup_client is None:
@@ -70,22 +79,27 @@ async def call_openai_with_fallback(deployment, messages, temperature=0.1):
         
         # Try with backup client
         try:
-            return await asyncio.to_thread(
+            response = await asyncio.to_thread(
                 backup_client.chat.completions.create,
                 model=deployment,
                 messages=messages,
                 response_format={"type": "json_object"},
                 temperature=temperature
             )
+            print(f">> {timestamp} BACKUP OpenAI call successful {subject_info}")
+            response.client_used = "backup"
+            return response
         except Exception as backup_error:
-            print(f"Backup AzureOpenAI client also failed: {str(backup_error)}")
+            print(f">> {timestamp} BACKUP OpenAI client also failed: {str(backup_error)} {subject_info}")
+            print(f">> {timestamp} CRITICAL: Both OpenAI endpoints failed, falling back to original destination routing {subject_info}")
             raise Exception(f"Both primary and backup AzureOpenAI clients failed. Primary error: {str(primary_error)}. Backup error: {str(backup_error)}")
 
-async def apex_action_check(text):
+async def apex_action_check(text, subject=None):
     """
     Specialized function to determine if an action is required based on the latest email in the thread.
     Uses the smaller GPT-4-mini model for efficiency.
     """
+    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     try:
         # Clean and escape the input text
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
@@ -120,13 +134,12 @@ async def apex_action_check(text):
         ]
         
         # Use the helper function for API call with fallback
-        response = await call_openai_with_fallback(deployment, messages, temperature=0.1)
+        response = await call_openai_with_fallback(deployment, messages, temperature=0.1, subject=subject)
 
         try:
             json_output = json.loads(response.choices[0].message.content)
         except json.JSONDecodeError as je:
-            print(f"JSON parsing error in action check: {je}")
-            print(f"Raw response content: {response.choices[0].message.content}")
+            print(f">> {timestamp} JSON parsing error in action check: {je}")
             raise Exception(f"Failed to parse JSON response in action check: {str(je)}")
 
         completion_tokens = response.usage.completion_tokens
@@ -134,24 +147,31 @@ async def apex_action_check(text):
         
         cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE)
                 
-        json_output.update({"apex_cost_usd": round(cost_usd, 5)})
+        json_output.update({
+            "apex_cost_usd": round(cost_usd, 5),
+            "deployment_used": response.client_used
+        })
         
         return {"response": "200", "message": json_output}
 
     except Exception as e:
-        print(f"Error in apex_action_check: {str(e)}")
+        print(f">> {timestamp} Error in apex_action_check: {str(e)}")
         return {"response": "500", "message": str(e)}
 
 
-async def apex_categorise(text):
+async def apex_categorise(text, subject=None):
     """
     Main function to categorize emails and determine various attributes including action required.
     Uses the full GPT-4 model for comprehensive analysis.
     """
+    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    subject_info = f"[Subject: {subject}] " if subject else ""
+    
     try: 
         # Clean and escape the input text
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
         
+        print(f">> {timestamp} Starting APEX classification {subject_info}")
         deployment = "gpt-4o"
         messages = [  
             {"role": "system",
@@ -251,7 +271,7 @@ async def apex_categorise(text):
         ]
         
         # Use the helper function for API call with fallback
-        response = await call_openai_with_fallback(deployment, messages, temperature=0.2)
+        response = await call_openai_with_fallback(deployment, messages, temperature=0.2, subject=subject)
         
         # JSONIFY THE APEX CLASSIFICATION OUTPUT
         try:
@@ -261,15 +281,18 @@ async def apex_categorise(text):
             completion_tokens = response.usage.completion_tokens
             prompt_tokens = response.usage.prompt_tokens
             apex_cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
+            
+            # Add info about which deployment was used
+            json_output["deployment_used"] = response.client_used
  
         except json.JSONDecodeError as je:
-            print(f"JSON parsing error in categorise: {je}")
-            print(f"Raw response content: {response.choices[0].message.content}")
+            print(f">> {timestamp} JSON parsing error in categorise: {je} {subject_info}")
             raise Exception(f"Failed to parse JSON response in categorise: {str(je)}")
         
         # --> START APEX ACTION CHECK BLOCK 
         try:
-            action_check_response = await apex_action_check(text)
+            print(f">> {timestamp} Starting action check verification {subject_info}")
+            action_check_response = await apex_action_check(text, subject)
             
             # CHECK IF THE ACTION CHECK WAS SUCCESSFUL
             if action_check_response["response"] == "200":
@@ -280,19 +303,16 @@ async def apex_categorise(text):
 
                 # CHECK IF THE APEX ACTION CHECK AGENT RESULT IS DIFFERENT FROM THE APEX CLASSIFICATION AGENT 
                 if action_check_result != json_output["action_required"]:
-                    print(f"Action check override: Original={json_output['action_required']}, New={action_check_result}")
+                    print(f">> {timestamp} Action check override: Original={json_output['action_required']}, New={action_check_result} {subject_info}")
                     
                     # IF THE CHECK SHOWS DIFFERENT RESULT THEN OVERRIDE THE APEX CLASSIFICATION RESULT WITH THE APEX ACTION CHECK RESULT
                     json_output["action_required"] = action_check_result
                
-                else:
-                   # IF THE RESULTS ARE THE SAME THEN LEAVE THE APEX CLASSIFICATION RESULT AS IS
-                   pass
+            print(f">> {timestamp} Action check verification complete {subject_info}")
                 
         except Exception as e:
             # IF THE APEX ACTION CHECK FAILS THEN LEAVE THE APEX CLASSIFICATION RESULT AS IS
-            print(f"Error in action check response: {str(e)}")
-            json_output = json_output
+            print(f">> {timestamp} Error in action check response: {str(e)} {subject_info}")
             
         # --> END APEX ACTION CHECK BLOCK 
         
@@ -307,11 +327,8 @@ async def apex_categorise(text):
         
         # --> START APEX PRIORITIZE BLOCK
         try:
-            apex_prioritize_response = await apex_prioritize(text, json_output["classification"])
-            print(type(json_output["classification"]))
-            print("All Categories: " ,json_output["classification"])
-            print("First element: ",json_output["classification"][0])
-            print("Final Category: ", apex_prioritize_response["message"]["final_category"])
+            print(f">> {timestamp} Starting category prioritization {subject_info}")
+            apex_prioritize_response = await apex_prioritize(text, json_output["classification"], subject)
             
             # CHECK IF APEX PRIORITIZE WAS SUCCESSFUL
             if apex_prioritize_response["response"] == "200":
@@ -320,33 +337,46 @@ async def apex_categorise(text):
                 apex_cost_usd += apex_prioritize_response["message"]["apex_cost_usd"]
                 
                 # UPDATE THE APEX CLASSIFICATION RESULT AND REASON FOR CLASSIFICATION WITH THE PRIORITIZED AGENT RESULTS
-                json_output["classification"] = apex_prioritize_response["message"]["final_category"].lower()
+                original_category = json_output["classification"][0] if isinstance(json_output["classification"], list) else json_output["classification"]
+                final_category = apex_prioritize_response["message"]["final_category"].lower()
+                
+                json_output["classification"] = final_category
                 json_output["rsn_classification"] = apex_prioritize_response["message"]["rsn_classification"]
+                
+                if original_category != final_category:
+                    print(f">> {timestamp} Category reprioritized: Original={original_category}, Final={final_category} {subject_info}")
             
             # IF THE APEX PRIORITIZE FAILS THEN LEAVE THE APEX CLASSIFICATION RESULT AS IS 
             else:
                 # SELECT THE FIRST ELEMENT OF THE APEX CLASSIFICATION CATEGORY LIST - DO NOT KEEP AS A LIST
-                json_output["classification"] = list(json_output["classification"])[0]
+                if isinstance(json_output["classification"], list) and len(json_output["classification"]) > 0:
+                    json_output["classification"] = json_output["classification"][0]
+                print(f">> {timestamp} Using first category as priority (fallback) {subject_info}")
                                 
         except Exception as e:
-            print(f"Error in apex_prioritize: {str(e)}")
+            print(f">> {timestamp} Error in category prioritization: {str(e)} {subject_info}")
 
         # --> END OF APEX PRIORITIZE BLOCK
 
         json_output.update({"apex_cost_usd": round(apex_cost_usd, 5)})
         
+        print(f">> {timestamp} APEX classification complete: Category={json_output['classification']}, Action={json_output['action_required']}, Sentiment={json_output['sentiment']} {subject_info}")
+        
         return {"response": "200", "message": json_output}
         
     except Exception as e: 
-        print(f"Error in apex_categorise: {str(e)}")
+        print(f">> {timestamp} ERROR in APEX classification: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
 
 
 # LLM AGENT TO CHECK IF THE CLASSIFICATION HAS BEEN DONE CORRECTLTY AND ALIGNS WITH CATEGORISATION PRIORITIES
-async def apex_prioritize(text, category_list):
+async def apex_prioritize(text, category_list, subject=None):
     """
     Specialized agent to validate the apex classification and priortise the final classification based on a priorty list and the context of the email.
     """
+    timestamp = datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    subject_info = f"[Subject: {subject}] " if subject else ""
+    
     try:
         # Clean and escape the input text
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
@@ -420,26 +450,28 @@ async def apex_prioritize(text, category_list):
         ]
         
         # Use the helper function for API call with fallback
-        response = await call_openai_with_fallback(deployment, messages, temperature=0.1)
+        response = await call_openai_with_fallback(deployment, messages, temperature=0.1, subject=subject)
 
         try:
             json_output = json.loads(response.choices[0].message.content)
         except json.JSONDecodeError as je:
-            print(f"JSON parsing error in action check: {je}")
-            print(f"Raw response content: {response.choices[0].message.content}")
-            raise Exception(f"Failed to parse JSON response in action check: {str(je)}")
+            print(f">> {timestamp} JSON parsing error in prioritization: {je} {subject_info}")
+            raise Exception(f"Failed to parse JSON response in prioritization: {str(je)}")
 
         completion_tokens = response.usage.completion_tokens
         prompt_tokens = response.usage.prompt_tokens
         
         cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
                 
-        json_output.update({"apex_cost_usd": round(cost_usd, 5)})
+        json_output.update({
+            "apex_cost_usd": round(cost_usd, 5),
+            "deployment_used": response.client_used
+        })
         
         return {"response": "200", "message": json_output}
 
     except Exception as e:
-        print(f"Error in apex_action_check: {str(e)}")
+        print(f">> {timestamp} Error in apex_prioritize: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
 
 
