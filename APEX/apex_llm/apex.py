@@ -6,21 +6,24 @@ import os
 import asyncio
 
 # AZURE OPENAI CONNECTION SETTINGS
-from config import AZURE_OPENAI_KEY, AZURE_OPENAI_ENDPOINT
+from config import (
+    AZURE_OPENAI_KEY, AZURE_OPENAI_ENDPOINT,
+    AZURE_OPENAI_BACKUP_KEY, AZURE_OPENAI_BACKUP_ENDPOINT
+)
 
 FX_RATE = 1
 
 load_dotenv()
 
-endpoint = AZURE_OPENAI_ENDPOINT
-deployment = 'gpt-4o'#'gpt4omini'     #Options 'gpt4omini', 'gpt-4o'
-api_key = AZURE_OPENAI_KEY
-
+# Initialize the primary client - keep variable name as 'client' for compatibility
 client = AzureOpenAI(
-    azure_endpoint=endpoint,
-    api_key=api_key,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_key=AZURE_OPENAI_KEY,
     api_version="2024-02-01",
 )
+
+# Backup client - initialized only when needed
+backup_client = None
 
 # All costs below are in USD
 model_costs = {"gpt-4o-mini": {"prompt_token_cost_pm":0.15,
@@ -28,6 +31,57 @@ model_costs = {"gpt-4o-mini": {"prompt_token_cost_pm":0.15,
                "gpt-4o":     {"prompt_token_cost_pm":5,
                             "completion_token_cost_pm":15},
                }
+
+async def call_openai_with_fallback(deployment, messages, temperature=0.1):
+    """
+    Helper function to call OpenAI API with fallback to backup client.
+    
+    Args:
+        deployment (str): The model deployment to use
+        messages (list): The messages to send to the API
+        temperature (float): The temperature parameter for the API call
+        
+    Returns:
+        The API response
+        
+    Raises:
+        Exception if both primary and backup clients fail
+    """
+    global backup_client
+    
+    # Try with primary client first
+    try:
+        return await asyncio.to_thread(
+            client.chat.completions.create,
+            model=deployment,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=temperature
+        )
+    except Exception as primary_error:
+        print(f"Primary AzureOpenAI client failed: {str(primary_error)}")
+        print("Trying backup AzureOpenAI client")
+        
+        # Initialize backup client if not already done
+        if backup_client is None:
+            backup_client = AzureOpenAI(
+                azure_endpoint=AZURE_OPENAI_BACKUP_ENDPOINT,
+                api_key=AZURE_OPENAI_BACKUP_KEY,
+                api_version="2024-02-01",
+            )
+        
+        # Try with backup client
+        try:
+            return await asyncio.to_thread(
+                backup_client.chat.completions.create,
+                model=deployment,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=temperature
+            )
+        except Exception as backup_error:
+            print(f"Backup AzureOpenAI client also failed: {str(backup_error)}")
+            raise Exception(f"Both primary and backup AzureOpenAI clients failed. Primary error: {str(primary_error)}. Backup error: {str(backup_error)}")
 
 async def apex_action_check(text):
     """
@@ -39,12 +93,9 @@ async def apex_action_check(text):
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
         
         deployment = "gpt-4o-mini"
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model=deployment,
-            messages=[
-                {"role": "system",
-                 "content": """You are an intelligent assistant specialized in analyzing email chains to determine if action is required. Focus exclusively on the latest email in the chain and determine if it requires any action, response, or follow-up.
+        messages = [
+            {"role": "system",
+             "content": """You are an intelligent assistant specialized in analyzing email chains to determine if action is required. Focus exclusively on the latest email in the chain and determine if it requires any action, response, or follow-up.
 
                     Instructions:
                     1. IMPORTANT: Identify the latest email in the chain. In most email formats:
@@ -65,13 +116,13 @@ async def apex_action_check(text):
 
                     The output must be in the following JSON format:
                     {"action_required": "yes"} or {"action_required": "no"}"""
-                },
-                {"role": "user",
-                 "content": f"Analyze this email chain and determine if the latest email requires action:\n\n{cleaned_text}"}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1
-        )
+            },
+            {"role": "user",
+             "content": f"Analyze this email chain and determine if the latest email requires action:\n\n{cleaned_text}"}
+        ]
+        
+        # Use the helper function for API call with fallback
+        response = await call_openai_with_fallback(deployment, messages, temperature=0.1)
 
         try:
             json_output = json.loads(response.choices[0].message.content)
@@ -104,12 +155,9 @@ async def apex_categorise(text):
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
         
         deployment = "gpt-4o"
-        response = await asyncio.to_thread(
-            client.chat.completions.create,  
-            model=deployment,  
-            messages=[  
-                {"role": "system",
-                "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of defined tasks. You must accomplish the following list of tasks: 
+        messages = [  
+            {"role": "system",
+            "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of defined tasks. You must accomplish the following list of tasks: 
 
                                 1. Classify the email content according to the classification categories below. You must return a python list of the top 3 possible categories that the email context aligns to (only if one or more categories apply). The list must always have the top related category as the first element with the third element (if applicable) being the least related. Follow the chronological order of the email conversation when providing the classification and ensure that the latest response is used for classification. Strictly use the following category mapping only:
 
@@ -198,14 +246,14 @@ async def apex_categorise(text):
                                 "rsn_classification": "answer",
                                 "action_required": "answer",  
                                 "sentiment": "answer"
-                                }"""                          
-                },
-                {"role": "user",
-                "content": f"Please summarize the following text:\n\n{cleaned_text}"}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.2
-        ) 
+                                }"""
+            },
+            {"role": "user",
+            "content": f"Please summarize the following text:\n\n{cleaned_text}"}
+        ]
+        
+        # Use the helper function for API call with fallback
+        response = await call_openai_with_fallback(deployment, messages, temperature=0.2)
         
         # JSONIFY THE APEX CLASSIFICATION OUTPUT
         try:
@@ -214,7 +262,7 @@ async def apex_categorise(text):
             # GET THE TOKEN USAGE FOR THE APEX CLASSIFICATION CALL
             completion_tokens = response.usage.completion_tokens
             prompt_tokens = response.usage.prompt_tokens
-            apex_cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE)
+            apex_cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
  
         except json.JSONDecodeError as je:
             print(f"JSON parsing error in categorise: {je}")
@@ -306,12 +354,9 @@ async def apex_prioritize(text, category_list):
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
         
         deployment = "gpt-4o-mini"
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model=deployment,
-            messages=[
-                {"role": "system",
-                 "content": """You are an intelligent assistant specialized in analyzing email content and a list of possible categories that the email was classified into. Your task is to determine the single most appropriate final category from the list.
+        messages = [
+            {"role": "system",
+             "content": """You are an intelligent assistant specialized in analyzing email content and a list of possible categories that the email was classified into. Your task is to determine the single most appropriate final category from the list.
 
                 IMPORTANT: This is a two-step decision process:
 
@@ -369,15 +414,15 @@ async def apex_prioritize(text, category_list):
                     "final_category": "answer",
                     "rsn_classification": "answer"
                 }"""
-                },
-                {
-                    "role": "user",
-                    "content": f"Analyze this email chain and the list of categories that this email applies to provide a single category classification for the email based primarily on the content of the latest email:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
-                }
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1
-        )
+            },
+            {
+                "role": "user",
+                "content": f"Analyze this email chain and the list of categories that this email applies to provide a single category classification for the email based primarily on the content of the latest email:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
+            }
+        ]
+        
+        # Use the helper function for API call with fallback
+        response = await call_openai_with_fallback(deployment, messages, temperature=0.1)
 
         try:
             json_output = json.loads(response.choices[0].message.content)
@@ -389,7 +434,7 @@ async def apex_prioritize(text, category_list):
         completion_tokens = response.usage.completion_tokens
         prompt_tokens = response.usage.prompt_tokens
         
-        cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE)
+        cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
                 
         json_output.update({"apex_cost_usd": round(cost_usd, 5)})
         
