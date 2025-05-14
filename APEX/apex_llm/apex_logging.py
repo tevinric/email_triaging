@@ -126,6 +126,21 @@ def log_apex_success(apex_response, log):
                 # If even that fails, set empty
                 add_to_log("apex_top_categories", "", log)
             
+        # Add new fields for region and token tracking
+        add_to_log("region_used", message.get('region_used', 'main'), log)
+        
+        # GPT-4o token usage
+        add_to_log("gpt_4o_prompt_tokens", message.get('gpt_4o_prompt_tokens', 0), log)
+        add_to_log("gpt_4o_completion_tokens", message.get('gpt_4o_completion_tokens', 0), log)
+        add_to_log("gpt_4o_total_tokens", message.get('gpt_4o_total_tokens', 0), log)
+        add_to_log("gpt_4o_cached_tokens", message.get('gpt_4o_cached_tokens', 0), log)
+        
+        # GPT-4o-mini token usage
+        add_to_log("gpt_4o_mini_prompt_tokens", message.get('gpt_4o_mini_prompt_tokens', 0), log)
+        add_to_log("gpt_4o_mini_completion_tokens", message.get('gpt_4o_mini_completion_tokens', 0), log)
+        add_to_log("gpt_4o_mini_total_tokens", message.get('gpt_4o_mini_total_tokens', 0), log)
+        add_to_log("gpt_4o_mini_cached_tokens", message.get('gpt_4o_mini_cached_tokens', 0), log)
+            
     except Exception as e:
         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: apex_logging.py - Function: log_apex_success - Error logging APEX success: {str(e)}")
         # Set error values if exception occurs
@@ -135,6 +150,16 @@ def log_apex_success(apex_response, log):
         add_to_log("apex_sentiment", "error", log)
         add_to_log("apex_cost_usd", 0.00, log)
         add_to_log("apex_top_categories", "", log)
+        add_to_log("region_used", "error", log)
+        add_to_log("gpt_4o_prompt_tokens", 0, log)
+        add_to_log("gpt_4o_completion_tokens", 0, log)
+        add_to_log("gpt_4o_total_tokens", 0, log)
+        add_to_log("gpt_4o_cached_tokens", 0, log)
+        add_to_log("gpt_4o_mini_prompt_tokens", 0, log)
+        add_to_log("gpt_4o_mini_completion_tokens", 0, log)
+        add_to_log("gpt_4o_mini_total_tokens", 0, log)
+        add_to_log("gpt_4o_mini_cached_tokens", 0, log)
+
 
 def log_apex_fail(log, classification_error_message):
     """
@@ -159,6 +184,17 @@ def log_apex_fail(log, classification_error_message):
         add_to_log("apex_cost_usd", 0.00, log)
         add_to_log("apex_top_categories", "", log)
         add_to_log("apex_intervention", "false", log)
+        
+        # Add defaults for new fields
+        add_to_log("region_used", "error", log)
+        add_to_log("gpt_4o_prompt_tokens", 0, log)
+        add_to_log("gpt_4o_completion_tokens", 0, log)
+        add_to_log("gpt_4o_total_tokens", 0, log)
+        add_to_log("gpt_4o_cached_tokens", 0, log)
+        add_to_log("gpt_4o_mini_prompt_tokens", 0, log)
+        add_to_log("gpt_4o_mini_completion_tokens", 0, log)
+        add_to_log("gpt_4o_mini_total_tokens", 0, log)
+        add_to_log("gpt_4o_mini_cached_tokens", 0, log)
     except Exception as e:
         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: apex_logging.py - Function: log_apex_fail - Error logging APEX failure: {str(e)}")
         # Set generic error values if exception occurs
@@ -169,6 +205,15 @@ def log_apex_fail(log, classification_error_message):
         add_to_log("apex_cost_usd", 0.00, log)
         add_to_log("apex_top_categories", "", log)
         add_to_log("apex_intervention", "false", log)
+        add_to_log("region_used", "error", log)
+        add_to_log("gpt_4o_prompt_tokens", 0, log)
+        add_to_log("gpt_4o_completion_tokens", 0, log)
+        add_to_log("gpt_4o_total_tokens", 0, log)
+        add_to_log("gpt_4o_cached_tokens", 0, log)
+        add_to_log("gpt_4o_mini_prompt_tokens", 0, log)
+        add_to_log("gpt_4o_mini_completion_tokens", 0, log)
+        add_to_log("gpt_4o_mini_total_tokens", 0, log)
+        add_to_log("gpt_4o_mini_cached_tokens", 0, log)
 
 def log_apex_intervention(log, original_destination, routed_destination):
     """
