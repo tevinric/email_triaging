@@ -9,6 +9,7 @@ import datetime
 from apex_llm.apex_routing import ang_routings
 
 
+
 # Set to track emails that have been processed but not marked as read yet
 processed_but_unread = set()
 
@@ -39,7 +40,7 @@ async def process_email(access_token, account, email_data, message_id):
     original_destination = email_data.get('to', '')
     subject = email_data.get('subject', 'No Subject')
     
-    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f">> {timestamp} Processing email [Subject: {subject}] from {original_sender}")
     
     try:
