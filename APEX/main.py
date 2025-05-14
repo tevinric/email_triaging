@@ -37,16 +37,20 @@ async def process_email(access_token, account, email_data, message_id):
     # Default sender and destination for fallback forwarding in case of errors
     original_sender = email_data.get('from', '')
     original_destination = email_data.get('to', '')
+    subject = email_data.get('subject', 'No Subject')
+    
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    print(f">> {timestamp} Processing email [Subject: {subject}] from {original_sender}")
     
     try:
         # First check if this email has already been processed to avoid duplicates
         if await check_email_processed(email_data['internet_message_id']):
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Email {email_data['internet_message_id']} has already been processed. Skipping.")
+            print(f">> {timestamp} Email already processed [Subject: {subject}]. Marking as read.")
             # Mark the email as read if it was already found in the database
             try:
                 await mark_email_as_read(access_token, account, message_id)
             except Exception as e:
-                print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Failed to mark already processed email as read: {str(e)}")
+                print(f">> {timestamp} Failed to mark already processed email as read: {str(e)}")
             return
         
         # Concatenate email data for APEX processing
@@ -54,10 +58,9 @@ async def process_email(access_token, account, email_data, message_id):
         
         # Get APEX classification - attempt to categorize the email
         try:
-            apex_response = await apex_categorise(str(llm_text))
-            print(apex_response)
+            apex_response = await apex_categorise(str(llm_text), subject)
         except Exception as e:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Error in APEX categorization: {str(e)}")
+            print(f">> {timestamp} Error in APEX categorization [Subject: {subject}]: {str(e)}")
             # If categorization fails, prepare for fallback routing
             apex_response = {'response': '500', 'message': str(e)}
         
@@ -70,11 +73,13 @@ async def process_email(access_token, account, email_data, message_id):
                 if str(apex_response['message']['classification']).lower() in ang_routings.keys():
                     FORWARD_TO = ang_routings[str(apex_response['message']['classification']).lower()]
                 else:
-                    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - APEX classification '{apex_response['message']['classification']}' not found in routing table. Forwarding to the original recipient.")
+                    print(f">> {timestamp} APEX classification '{apex_response['message']['classification']}' not found in routing table [Subject: {subject}]. Forwarding to original recipient.")
                     FORWARD_TO = original_destination
                 
                 # Log whether AI intervention occurred (changed the destination)
                 log_apex_intervention(log, original_destination, FORWARD_TO)
+                
+                print(f">> {timestamp} Forwarding to {FORWARD_TO} based on classification '{apex_response['message']['classification']}' [Subject: {subject}]")
                 
                 # Forward email to the determined address
                 forward_success = await forward_email(
@@ -107,9 +112,9 @@ async def process_email(access_token, account, email_data, message_id):
                             
                             await insert_log_to_db(log)
                             processed = True
-                            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Successfully processed email {message_id}, forwarded to {FORWARD_TO}")
+                            print(f">> {timestamp} Successfully processed and marked as read [Subject: {subject}]")
                     else:
-                        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Failed to mark email {message_id} as read. Adding to processed_but_unread set.")
+                        print(f">> {timestamp} Failed to mark email as read [Subject: {subject}]. Adding to retry queue.")
                         processed_but_unread.add((account, message_id))
                         
                         # Log even if we couldn't mark as read
@@ -129,7 +134,7 @@ async def process_email(access_token, account, email_data, message_id):
                             processed = True
                 else:
                     # If forwarding to classified destination failed, try sending to original destination
-                    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Failed to forward to classified destination {FORWARD_TO}. Attempting to forward to original destination {original_destination}")
+                    print(f">> {timestamp} Failed to forward to classified destination {FORWARD_TO} [Subject: {subject}]. Attempting fallback routing.")
                     
                     # Reset intervention flag for fallback routing
                     add_to_log("apex_intervention", "false", log)
@@ -162,7 +167,7 @@ async def process_email(access_token, account, email_data, message_id):
                             await insert_log_to_db(log)
                             processed = True
                             
-                            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Successfully forwarded email {message_id} to original destination {original_destination} after primary routing failed")
+                            print(f">> {timestamp} Fallback routing successful [Subject: {subject}]")
                     else:
                         # Both primary and fallback forwarding failed
                         if not processed:
@@ -170,12 +175,13 @@ async def process_email(access_token, account, email_data, message_id):
                                 log,
                                 f"Failed to forward to both {FORWARD_TO} and fallback {original_destination}",
                                 "Multiple forwarding failures",
-                                start_time
+                                start_time,
+                                subject
                             )
                             processed = True
                 
             except Exception as e:
-                print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Error in forwarding/marking as read: {str(e)}")
+                print(f">> {timestamp} Error in forwarding/marking as read [Subject: {subject}]: {str(e)}")
                 
                 # Attempt fallback forwarding to original destination
                 try:
@@ -210,20 +216,20 @@ async def process_email(access_token, account, email_data, message_id):
                             await insert_log_to_db(log)
                             processed = True
                             
-                            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Successfully recovered from error by forwarding to {original_destination}")
+                            print(f">> {timestamp} Error recovery successful [Subject: {subject}]")
                     else:
                         if not processed:
-                            await handle_error_logging(log, original_destination, f"Failed in both primary processing and fallback forwarding: {str(e)}", start_time)
+                            await handle_error_logging(log, original_destination, f"Failed in both primary processing and fallback forwarding: {str(e)}", start_time, subject)
                             processed = True
                 except Exception as fallback_err:
-                    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Error in fallback forwarding: {str(fallback_err)}")
+                    print(f">> {timestamp} Error in fallback forwarding [Subject: {subject}]: {str(fallback_err)}")
                     if not processed:
-                        await handle_error_logging(log, original_destination, f"Complete failure - Primary error: {str(e)}, Fallback error: {str(fallback_err)}", start_time)
+                        await handle_error_logging(log, original_destination, f"Complete failure - Primary error: {str(e)}, Fallback error: {str(fallback_err)}", start_time, subject)
                         processed = True
                 
         else:
             # APEX classification failed - implement fallback routing
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - APEX classification failed: {apex_response['message']}. Implementing fallback routing.")
+            print(f">> {timestamp} APEX classification failed [Subject: {subject}]. Implementing fallback routing.")
             # No intervention when falling back to original destination
             add_to_log("apex_intervention", "false", log)
             
@@ -235,12 +241,13 @@ async def process_email(access_token, account, email_data, message_id):
                     access_token, 
                     account, 
                     message_id, 
-                    start_time
+                    start_time,
+                    subject
                 )
                 processed = True
                 
     except Exception as e:
-        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - General error: {str(e)}")
+        print(f">> {timestamp} General error processing email [Subject: {subject}]: {str(e)}")
         
         # Final attempt at fallback routing if nothing else worked
         try:
@@ -263,28 +270,28 @@ async def process_email(access_token, account, email_data, message_id):
                     try:
                         marked_as_read = await mark_email_as_read(access_token, account, message_id)
                     except Exception as mark_err:
-                        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Failed to mark as read in critical error recovery: {str(mark_err)}")
+                        print(f">> {timestamp} Failed to mark as read in critical error recovery [Subject: {subject}]: {str(mark_err)}")
                         marked_as_read = False
                     
-                    await handle_error_logging(log, original_destination + " (critical recovery)", f"Critical error recovery successful: {str(e)}", start_time)
+                    await handle_error_logging(log, original_destination + " (critical recovery)", f"Critical error recovery successful: {str(e)}", start_time, subject)
                     processed = True
                     
-                    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Critical error recovery successful for email {message_id}")
+                    print(f">> {timestamp} Critical error recovery successful [Subject: {subject}]")
                 else:
-                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: All delivery attempts failed. Original error: {str(e)}", start_time)
+                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: All delivery attempts failed. Original error: {str(e)}", start_time, subject)
                     processed = True
                     
-                    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - CRITICAL: All delivery attempts failed for email {message_id}")
+                    print(f">> {timestamp} CRITICAL: All delivery attempts failed [Subject: {subject}]")
         except Exception as final_err:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Final error recovery attempt failed: {str(final_err)}")
+            print(f">> {timestamp} Final error recovery attempt failed [Subject: {subject}]: {str(final_err)}")
             if not processed:
                 try:
-                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: Email could not be processed or forwarded. Original error: {str(e)}, Final error: {str(final_err)}", start_time)
+                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: Email could not be processed or forwarded. Original error: {str(e)}, Final error: {str(final_err)}", start_time, subject)
                     processed = True
                 except Exception as log_err:
-                    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_email - Even logging failed: {str(log_err)}")
+                    print(f">> {timestamp} Even logging failed [Subject: {subject}]: {str(log_err)}")
 
-async def handle_error_logging(log, forward_to, error_message, start_time):
+async def handle_error_logging(log, forward_to, error_message, start_time, subject=None):
     """
     Helper function to handle error logging consistently
     
@@ -293,10 +300,14 @@ async def handle_error_logging(log, forward_to, error_message, start_time):
         forward_to: The address the email was forwarded to (or attempted to)
         error_message: The error message to log
         start_time: When the processing started, for calculating TAT
+        subject: Optional email subject for better logging
         
     Returns:
         None
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    subject_info = f"[Subject: {subject}] " if subject else ""
+    
     try:
         log_apex_fail(log, error_message)
         add_to_log("apex_routed_to", forward_to, log)
@@ -314,10 +325,11 @@ async def handle_error_logging(log, forward_to, error_message, start_time):
         add_to_log("end_time", end_time, log)
         
         await insert_log_to_db(log)
+        print(f">> {timestamp} Error logged {subject_info}")
     except Exception as e:
-        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: handle_error_logging - Failed to log error: {str(e)}")
+        print(f">> {timestamp} Failed to log error {subject_info}: {str(e)}")
 
-async def handle_apex_failure_logging(log, email_data, apex_response, access_token, account, message_id, start_time):
+async def handle_apex_failure_logging(log, email_data, apex_response, access_token, account, message_id, start_time, subject=None):
     """
     Helper function to handle APEX failure logging consistently with fallback routing
     
@@ -329,16 +341,20 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
         account: Email account being processed
         message_id: Unique ID of the email message
         start_time: When processing started, for calculating TAT
+        subject: Optional email subject for better logging
         
     Returns:
         None
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    subject_info = f"[Subject: {subject}] " if subject else ""
+    
     original_sender = email_data.get('from', '')
     original_destination = email_data.get('to', '')
     
     try:
         # Always try to forward to original destination when APEX fails
-        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: handle_apex_failure_logging - Attempting to forward to original destination {original_destination} due to APEX failure")
+        print(f">> {timestamp} Attempting to forward to original destination due to APEX failure {subject_info}")
         
         # No intervention when falling back to original destination on APEX failure
         add_to_log("apex_intervention", "false", log)
@@ -358,7 +374,7 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
             try:
                 marked_as_read = await mark_email_as_read(access_token, account, message_id)
             except Exception as mark_err:
-                print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: handle_apex_failure_logging - Failed to mark as read: {str(mark_err)}")
+                print(f">> {timestamp} Failed to mark as read {subject_info}: {str(mark_err)}")
                 marked_as_read = False
                 
             # Log the outcome
@@ -374,14 +390,14 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
             add_to_log("end_time", end_time, log)
             
             await insert_log_to_db(log)
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: handle_apex_failure_logging - Successfully forwarded to original destination despite APEX failure")
+            print(f">> {timestamp} Successfully forwarded to original destination despite APEX failure {subject_info}")
         else:
             # If even the fallback forwarding failed, log the error
-            await handle_error_logging(log, original_destination, f"Failed to forward to original destination after APEX failure: {apex_response['message']}", start_time)
+            await handle_error_logging(log, original_destination, f"Failed to forward to original destination after APEX failure: {apex_response['message']}", start_time, subject)
             
     except Exception as e:
-        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: handle_apex_failure_logging - Error in handling APEX failure: {str(e)}")
-        await handle_error_logging(log, "DELIVERY FAILED", f"Failed to recover from APEX failure: {str(e)}", start_time)
+        print(f">> {timestamp} Error in handling APEX failure {subject_info}: {str(e)}")
+        await handle_error_logging(log, "DELIVERY FAILED", f"Failed to recover from APEX failure: {str(e)}", start_time, subject)
 
 async def process_batch():
     """
@@ -392,44 +408,50 @@ async def process_batch():
     Returns:
         None
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
     try:
         # Get fresh access token for Microsoft Graph API
         access_token = await get_access_token()
         if not access_token:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_batch - Failed to obtain access token. Skipping batch.")
+            print(f">> {timestamp} Failed to obtain access token. Skipping batch.")
             return
         
         # Process each configured email account
         for account in EMAIL_ACCOUNTS:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_batch - Fetching unread emails for: {account}")
+            print(f">> {timestamp} Fetching unread emails for: {account}")
             try:
                 all_unread_emails = await fetch_unread_emails(access_token, account)
                 
             except Exception as e:
-                print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_batch - Error fetching unread emails for {account}: {str(e)}")
+                print(f">> {timestamp} Error fetching unread emails for {account}: {str(e)}")
                 continue  # Skip to the next account if there's an error fetching emails
 
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_batch - Processing {len(all_unread_emails)} unread emails in batch")
+            if all_unread_emails:
+                print(f">> {timestamp} Processing {len(all_unread_emails)} unread emails in batch")
             
-            # Process emails in small batches to avoid API rate limits
-            for i in range(0, len(all_unread_emails), BATCH_SIZE):
-                batch = all_unread_emails[i:i+BATCH_SIZE]
-                tasks = [asyncio.create_task(process_email(access_token, account, email_data, message_id)) 
-                         for email_data, message_id in batch]
-                
-                # gather with return_exceptions=True ensures the loop continues even if some tasks fail
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # Check for exceptions in the results
-                for idx, result in enumerate(results):
-                    if isinstance(result, Exception):
-                        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_batch - Task for email {idx+i} raised exception: {str(result)}")
-                
-                # Add a small delay between batches to avoid overwhelming the API
-                await asyncio.sleep(1)
+                # Process emails in small batches to avoid API rate limits
+                for i in range(0, len(all_unread_emails), BATCH_SIZE):
+                    batch = all_unread_emails[i:i+BATCH_SIZE]
+                    tasks = [asyncio.create_task(process_email(access_token, account, email_data, message_id)) 
+                            for email_data, message_id in batch]
+                    
+                    # gather with return_exceptions=True ensures the loop continues even if some tasks fail
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Check for exceptions in the results
+                    for idx, result in enumerate(results):
+                        if isinstance(result, Exception):
+                            email_subject = batch[idx][0].get('subject', 'Unknown subject') if idx < len(batch) else 'Unknown'
+                            print(f">> {timestamp} Task for email [Subject: {email_subject}] raised exception: {str(result)}")
+                    
+                    # Add a small delay between batches to avoid overwhelming the API
+                    await asyncio.sleep(1)
+            else:
+                print(f">> {timestamp} No unread emails found for: {account}")
                 
     except Exception as e:
-        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: process_batch - Unexpected error in batch processing: {str(e)}")
+        print(f">> {timestamp} Unexpected error in batch processing: {str(e)}")
 
 async def retry_unread_emails():
     """
@@ -439,30 +461,38 @@ async def retry_unread_emails():
     Returns:
         None
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
     if not processed_but_unread:
         return
+    
+    print(f">> {timestamp} Retrying to mark {len(processed_but_unread)} processed emails as read")
     
     try:
         # Get fresh access token
         access_token = await get_access_token()
         if not access_token:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: retry_unread_emails - Failed to obtain access token for retry operation.")
+            print(f">> {timestamp} Failed to obtain access token for retry operation.")
             return
         
         # Create a copy of the set to avoid modification during iteration
         retry_set = processed_but_unread.copy()
+        success_count = 0
         
         for account, message_id in retry_set:
             try:
                 success = await mark_email_as_read(access_token, account, message_id)
                 if success:
                     processed_but_unread.remove((account, message_id))
-                    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: retry_unread_emails - Successfully marked message {message_id} as read on retry.")
+                    success_count += 1
             except Exception as e:
-                print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: retry_unread_emails - Failed to mark message {message_id} as read on retry: {str(e)}")
+                print(f">> {timestamp} Failed to mark message {message_id} as read on retry: {str(e)}")
+        
+        if success_count > 0:
+            print(f">> {timestamp} Successfully marked {success_count} emails as read on retry")
     
     except Exception as e:
-        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: retry_unread_emails - Error in retry operation: {str(e)}")
+        print(f">> {timestamp} Error in retry operation: {str(e)}")
 
 async def main():
     """
@@ -476,7 +506,8 @@ async def main():
     retry_interval = 5
     loop_count = 0
 
-    print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - APEX Email Processing Service starting...")
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    print(f">> {timestamp} APEX Email Processing Service starting...")
 
     while True:
         start_time = time.time()
@@ -492,17 +523,20 @@ async def main():
                 loop_count = 0
                 
         except Exception as e: 
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: main - There was an error processing the batch: {str(e)}")
+            timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+            print(f">> {timestamp} Error processing batch: {str(e)}")
             # Continue the loop despite errors to maintain service continuity
 
         # Calculate remaining time in the interval and sleep accordingly
         elapsed_time = time.time() - start_time
         if elapsed_time < EMAIL_FETCH_INTERVAL:
             sleep_time = EMAIL_FETCH_INTERVAL - elapsed_time
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: main - Batch processing completed in {elapsed_time:.2f} seconds. Sleeping for {sleep_time:.2f} seconds.")
+            timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+            print(f">> {timestamp} Batch processing completed in {elapsed_time:.2f}s. Sleeping for {sleep_time:.2f}s.")
             await asyncio.sleep(sleep_time)
         else:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: main - Batch processing took {elapsed_time:.2f} seconds, which is longer than the interval ({EMAIL_FETCH_INTERVAL} seconds). Processing next batch immediately.")
+            timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+            print(f">> {timestamp} Batch processing took {elapsed_time:.2f}s (longer than interval). Processing next batch immediately.")
 
 def trigger_email_triage():
     """
@@ -512,14 +546,16 @@ def trigger_email_triage():
     Returns:
         None
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
     if len(sys.argv) > 1 and sys.argv[1] == 'start':
-        print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: trigger_email_triage - Starting APEX email processing service...")
+        print(f">> {timestamp} Starting APEX email processing service...")
         try:
             asyncio.run(main())
         except KeyboardInterrupt:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: trigger_email_triage - Service stopped by user.")
+            print(f">> {timestamp} Service stopped by user.")
         except Exception as e:
-            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: main.py - Function: trigger_email_triage - Fatal error: {str(e)}")
+            print(f">> {timestamp} Fatal error: {str(e)}")
             # In a production environment, you might want to restart the service here
     else:
         print("To start the email processing, run with 'start' argument")
@@ -527,4 +563,3 @@ def trigger_email_triage():
 
 if __name__ == '__main__':
     trigger_email_triage()
-    
