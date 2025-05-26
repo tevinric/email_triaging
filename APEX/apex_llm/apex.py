@@ -186,14 +186,19 @@ async def apex_categorise(text, subject=None):
                                 CRITICAL CLASSIFICATION PRIORITY RULES:
                                 1. **COMPLAINT DETECTION OVERRIDE**: If an email contains complaint language, dissatisfaction, frustration, or negative experiences about services/products, prioritize "bad service/experience" over all other categories, even if the email mentions specific topics like tracking, claims, etc.
                                 
-                                2. **COMPLAINT INDICATORS**: Look for these key phrases and sentiments that indicate complaints:
+                                2. **DOCUMENT DIRECTION RULE**: Carefully distinguish between:
+                                   - REQUESTING documents (customer wants to RECEIVE documents) → "document request"
+                                   - FOLLOWING UP on submitted documents (customer already SENT documents) → "other" 
+                                   - CONFIRMING receipt of submitted documents → "other"
+                                
+                                3. **COMPLAINT INDICATORS**: Look for these key phrases and sentiments that indicate complaints:
                                    - "poorly done", "bad service", "disappointed", "frustrated", "unhappy"
                                    - "had to visit multiple times", "took too long", "not satisfied"
                                    - "terrible experience", "awful", "unacceptable", "unprofessional"
                                    - "waste of time", "incompetent", "rude staff", "poor quality"
                                    - Any expression of dissatisfaction with service delivery, quality, or experience
                                 
-                                3. **TOPIC vs COMPLAINT DISTINCTION**: 
+                                4. **TOPIC vs COMPLAINT DISTINCTION**: 
                                    - If email mentions "tracking device" but complains about installation/service = "bad service/experience"
                                    - If email mentions "claims" but complains about claims handling = "bad service/experience"  
                                    - If email mentions any service but expresses dissatisfaction = "bad service/experience"
@@ -210,6 +215,22 @@ async def apex_categorise(text, subject=None):
                                     - "Disappointed with the service quality" → bad service/experience
                                     
                                     If the email reveals evidence of bad service/experience then this category must be seriously considered before all other categories to prevent potential reputational damage to the insurance company.
+
+                                    document request: **[IMPORTANT: DIRECTION MATTERS]** Email sender requests for a document to be **SENT TO THEM**. This category is ONLY for customers who want to RECEIVE documents from the insurance company. 
+                                    
+                                    **EXAMPLES OF DOCUMENT REQUESTS (customer wants to receive):**
+                                    - "Please send me my policy schedule"
+                                    - "I need a copy of my tax certificate"
+                                    - "Can you email me the claims history report?"
+                                    - "Please provide my noting of interest document"
+                                    
+                                    **EXAMPLES THAT ARE NOT DOCUMENT REQUESTS (classify as "other"):**
+                                    - "I submitted documents but didn't get confirmation" → other (follow-up on sent docs)
+                                    - "Did you receive the forms I sent yesterday?" → other (confirmation of receipt)
+                                    - "I uploaded my ID copy, please confirm receipt" → other (status inquiry)
+                                    - "No confirmation received after submitting documents" → other (follow-up inquiry)
+                                    
+                                    Requested Documents that customers want to RECEIVE may include: Policy schedule documents, noting of interest, tax letters, cross border documents, statement of services or benefits, claims history, previous claims summary etc. Any request for an actual document TO BE SENT to the client related to their insurance product.
 
                                     vehicle tracking: Emails sent for capturing of vehicle tracking device details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate details. The category handles emails from customers where the client sends through vehicle/car tracking device certificate for verification or capture by the insurance company. 
                                     
@@ -233,8 +254,6 @@ async def apex_categorise(text, subject=None):
                                     
                                     refund request: Request from email sender for a refund related to the cancellation of a newly taken or existing policy or related insurance services. This category includes new refund requests or follow ups on an existing request. In instances where the customer requests for a cancellation and a refund then the classification should be "retentions" as the retentions department will need to process the cancellation before the refund can be processed.
                                     
-                                    document request: Email sender requests for a document to be sent to them. Requested Documents may include Policy schedule documents, noting of interest, tax letters, cross border documents, statement of services or benefits, claims history, previous claims summary etc. Any request for an actual document related to the client and their insurance product. 
-
                                     online/app: Emails related to System errors or system queries. Systems include the online websites and/or applications. Excludes system errors related to payments, payment receipts or payment success verification on the online/app platforms.
 
                                     retentions: Email requests for policy cancellation/termination of the entire policy (not just individual risk items), cancellations related to annual review queries, refunds after cancellation (must be cancelled customer). Use this category when the customer email requests cancelling a policy in its entirety, which usually includes all risk items on the policy.
@@ -244,8 +263,15 @@ async def apex_categorise(text, subject=None):
                                     previous insurance checks/queries : Email requests or queries related to a Previous Insurance (PI) check, verification or validation.
 
                                     assist: Emails requsting roadside assistance, towing assistance or home assist.  Roadside assistance includes 24/7 support for assistance with issues like flat tyres, flat/dead batteries and locked keys requiring locksmith services. Towing assistance includes support for towing s vehicle to the nearest place of safety or a designated repairer. Home assist includes request for assitance with a home emergency where the customer needs urgent help from the services of a plumber, electrician, locksmith or glazier (network of home specialists). 
+                                    
+                                    other: Use this category for emails that cannot be classified into the above categories. This includes:
+                                        * Follow-up inquiries on documents already submitted by the customer
+                                        * Confirmation requests about receipt of documents sent by the customer  
+                                        * Status inquiries about submitted applications or forms
+                                        * General inquiries that don't fit other specific categories
+                                        * Administrative follow-ups and confirmations
                                                                            
-                                    If the email cannot be classified into one of the above categories, please classify it as "other". 
+                                    **Do not use any classifications, except for those above.**
  
                                 2. Provide a short explanation for the classification in one sentence only.
                                 
@@ -270,6 +296,7 @@ async def apex_categorise(text, subject=None):
 
                                 2. CLASSIFICATION PRIORITY:
                                    - **ALWAYS CHECK FOR COMPLAINT LANGUAGE FIRST** before considering topic-based classification
+                                   - **ALWAYS CHECK DOCUMENT DIRECTION** - is customer asking to RECEIVE docs or following up on SENT docs?
                                    - ALWAYS prioritize the content of the latest email for classification, even if it's brief.
                                    - The subject line should be considered but given lower priority than the actual message content.
                                    - When the latest email clearly indicates a purpose (e.g., "Please send me my policy document"), 
@@ -286,9 +313,12 @@ async def apex_categorise(text, subject=None):
                                    - Example 2: "Please find attached my tracking certificate" → "vehicle tracking" (neutral request)
                                    - Example 3: "Your claims team is very slow and unprofessional" → "bad service/experience" (complaint overrides topic)
                                    - Example 4: "I need to submit a claim for my vehicle" → "claims" (neutral request)
+                                   - Example 5: "Please send me my policy schedule" → "document request" (requesting to receive)
+                                   - Example 6: "I submitted documents but got no confirmation" → "other" (follow-up on sent docs)
                                 
                                 5. COMMON PITFALLS TO AVOID:
                                    - Don't classify based on topic keywords alone - check for complaint sentiment first
+                                   - Don't confuse document direction - requesting vs. following up on submitted
                                    - Don't be misled by a subject line that doesn't match the latest email content
                                    - Don't classify based on previous messages if the latest email has changed the topic
                                    - Don't assume the topic hasn't changed just because it's the same thread
@@ -455,7 +485,7 @@ async def apex_categorise(text, subject=None):
 async def apex_prioritize(text, category_list, subject=None):
     """
     Specialized agent to validate the apex classification and prioritise the final classification based on a priority list and the context of the email.
-    Enhanced with complaint detection logic.
+    Enhanced with complaint detection logic and document direction analysis.
     """
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     subject_info = f"[Subject: {subject}] " if subject else ""
@@ -469,24 +499,42 @@ async def apex_prioritize(text, category_list, subject=None):
             {"role": "system",
              "content": """You are an intelligent assistant specialized in analyzing email content and a list of possible categories that the email was classified into. Your task is to determine the single most appropriate final category from the list.
 
-                CRITICAL COMPLAINT DETECTION RULE:
+                CRITICAL OVERRIDE RULES (Check in this order):
+
+                1. **COMPLAINT DETECTION RULE:**
                 - If "bad service/experience" is in the category list AND the email contains complaint language, dissatisfaction, or negative experiences, ALWAYS select "bad service/experience" as the final category, regardless of other topics mentioned.
                 
-                COMPLAINT INDICATORS to look for:
+                2. **DOCUMENT DIRECTION RULE:**
+                - If "document request" is in the category list, carefully check the direction:
+                  * Customer wants to RECEIVE documents → "document request" 
+                  * Customer is following up on SENT documents → "other" (if "other" is in list)
+                  * Customer asking for confirmation of received documents → "other" (if "other" is in list)
+                
+                **DOCUMENT DIRECTION EXAMPLES:**
+                - "Please send me my policy schedule" → "document request" (wants to receive)
+                - "I submitted documents but got no confirmation" → "other" (follow-up on sent)
+                - "Did you receive my forms?" → "other" (confirmation of receipt)
+                - "No confirmation after uploading documents" → "other" (status inquiry)
+
+                **COMPLAINT INDICATORS to look for:**
                 - "poorly done", "bad service", "disappointed", "frustrated", "unhappy", "terrible", "awful"
                 - "had to visit multiple times", "took too long", "not satisfied", "unacceptable"
                 - "waste of time", "incompetent", "rude", "poor quality", "unprofessional"
                 - Any expression of dissatisfaction with service delivery, quality, or experience
 
-                IMPORTANT: This is a two-step decision process:
+                **DECISION PROCESS:**
 
                 STEP 1: CHECK FOR COMPLAINTS FIRST
                 - Scan the email content for complaint language and negative sentiment
                 - If complaint language is detected AND "bad service/experience" is in the category list, SELECT IT immediately
                 - This overrides all other considerations including the priority list below
 
-                STEP 2: ONLY IF NO COMPLAINTS - EVALUATE CATEGORIES NORMALLY
-                - If no complaint language is detected, proceed with normal evaluation
+                STEP 2: CHECK DOCUMENT DIRECTION
+                - If "document request" is in the category list, determine the direction:
+                  * If customer wants to RECEIVE documents, keep "document request"
+                  * If customer is following up on SENT documents, select "other" (if available)
+                
+                STEP 3: EVALUATE CATEGORIES NORMALLY (if no overrides apply)
                 - The list of categories is in order of relevance as determined by the initial classifier
                 - The first category in the list is the primary classification
                 - CAREFULLY examine the latest email in the thread to determine if this first category clearly aligns with the actual request or topic of the latest email
@@ -508,27 +556,33 @@ async def apex_prioritize(text, category_list, subject=None):
                     11       | other
                     12       | previous insurance checks/queries
 
-                EXAMPLES:
+                **EXAMPLES:**
 
                 Example 1: COMPLAINT DETECTED - OVERRIDE EVERYTHING
-                - Email content: "The tracking device installation was poorly done"
+                - Email: "The tracking device installation was poorly done"
                 - Categories: ["vehicle tracking", "bad service/experience", "other"]
                 - Decision: Select "bad service/experience" (complaint language detected)
-                - Explanation: The email expresses dissatisfaction with service quality, overriding the topic-based classification
+                - Explanation: The email expresses dissatisfaction with service quality, overriding topic-based classification
 
-                Example 2: NO COMPLAINT - CLEAR MATCH
-                - Email content: "Please send me my policy document"
-                - Categories: ["document request", "online/app", "amendments"]
-                - Decision: Select "document request" (first category clearly matches, no complaints)
-                - Explanation: The first category clearly matches the email content
+                Example 2: DOCUMENT DIRECTION - FOLLOW-UP ON SENT
+                - Email: "I submitted documents but never received confirmation"
+                - Categories: ["document request", "other", "amendments"]
+                - Decision: Select "other" (customer following up on sent documents, not requesting new ones)
+                - Explanation: Customer is inquiring about documents they already sent, not requesting new documents
 
-                Example 3: NO COMPLAINT - USE PRIORITY LIST
-                - Email content: "I need help with both my vehicle and a claim"
+                Example 3: DOCUMENT DIRECTION - WANTS TO RECEIVE
+                - Email: "Please send me my policy schedule"
+                - Categories: ["document request", "other", "amendments"]
+                - Decision: Select "document request" (customer wants to receive documents)
+                - Explanation: Customer is requesting documents to be sent to them
+
+                Example 4: NO OVERRIDES - NORMAL EVALUATION
+                - Email: "I need help with both my vehicle and a claim"
                 - Categories: ["claims", "vehicle tracking", "amendments"]  
                 - Decision: Select "vehicle tracking" based on priority list (priority 3 vs 6)
                 - Explanation: Both categories apply equally, so priority list determines selection
 
-                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT. Mention if complaint language was the determining factor, or if you used the priority list.
+                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT. Mention if complaint language or document direction was the determining factor, or if you used the priority list.
 
                 Use the following JSON format for your response:
                 {
@@ -538,7 +592,7 @@ async def apex_prioritize(text, category_list, subject=None):
             },
             {
                 "role": "user",
-                "content": f"Analyze this email chain and the list of categories to provide a single category classification. First check for complaint language, then evaluate normally:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
+                "content": f"Analyze this email chain and the list of categories to provide a single category classification. Check for complaints first, then document direction, then evaluate normally:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
             }
         ]
         
