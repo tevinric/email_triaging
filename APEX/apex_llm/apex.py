@@ -183,7 +183,37 @@ async def apex_categorise(text, subject=None):
             {"role": "system",
             "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of defined tasks for a South African insurance company. You must accomplish the following list of tasks: 
 
+                                CRITICAL CLASSIFICATION PRIORITY RULES:
+                                1. **COMPLAINT DETECTION OVERRIDE**: If an email contains complaint language, dissatisfaction, frustration, or negative experiences about services/products, prioritize "bad service/experience" over all other categories, even if the email mentions specific topics like tracking, claims, etc.
+                                
+                                2. **COMPLAINT INDICATORS**: Look for these key phrases and sentiments that indicate complaints:
+                                   - "poorly done", "bad service", "disappointed", "frustrated", "unhappy"
+                                   - "had to visit multiple times", "took too long", "not satisfied"
+                                   - "terrible experience", "awful", "unacceptable", "unprofessional"
+                                   - "waste of time", "incompetent", "rude staff", "poor quality"
+                                   - Any expression of dissatisfaction with service delivery, quality, or experience
+                                
+                                3. **TOPIC vs COMPLAINT DISTINCTION**: 
+                                   - If email mentions "tracking device" but complains about installation/service = "bad service/experience"
+                                   - If email mentions "claims" but complains about claims handling = "bad service/experience"  
+                                   - If email mentions any service but expresses dissatisfaction = "bad service/experience"
+                                   - Only classify as the specific topic (tracking, claims, etc.) if it's a neutral request without complaint language
+
                                 1. Classify the email content according to the classification categories below. You must return a python list of the top 3 possible categories that the email context aligns to (only if one or more categories apply). The list must always have the top related category as the first element with the third element (if applicable) being the least related. Follow the chronological order of the email conversation when providing the classification and ensure that the latest response is used for classification. Strictly use the following category mapping only:
+
+                                    bad service/experience: **[HIGHEST PRIORITY FOR COMPLAINTS]** Emails about complaints and negative feedback emails from customers indicating bad service or experience related to our products or services. Use this category where the customer's email expresses frustration/irritation or an overall sense of bad service/experience related to a product, service, interaction, experience or lack of response from the insurance company. 
+                                    
+                                    **IMPORTANT**: This category takes precedence over all others when complaint language is detected, regardless of the topic mentioned. Examples:
+                                    - "The tracking device installation was poorly done" → bad service/experience (NOT vehicle tracking)
+                                    - "Your claims process is terrible" → bad service/experience (NOT claims)
+                                    - "Had to visit the office multiple times, very frustrating" → bad service/experience
+                                    - "Disappointed with the service quality" → bad service/experience
+                                    
+                                    If the email reveals evidence of bad service/experience then this category must be seriously considered before all other categories to prevent potential reputational damage to the insurance company.
+
+                                    vehicle tracking: Emails sent for capturing of vehicle tracking device details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate details. The category handles emails from customers where the client sends through vehicle/car tracking device certificate for verification or capture by the insurance company. 
+                                    
+                                    **NOTE**: Only use this category for neutral requests about tracking certificates/documentation. If there are complaints about tracking services, use "bad service/experience" instead.
 
                                     amendments: The following scenarios constitute an ammendment to a policy:                                   
                                                 * Add, change, or remove individual risk items or the details of a policy. This includes changes to Risk/Physical address, contact details, policy holder details (name, surname, gender, marital status, etc.), household members details, commencement date, passport details, debit order details (banking details, debit order date), banking deduction details, cashback details, premium waivers, deceased customer details or information. This also includes the cancellation or removal of individual risk items (e.g., a vehicle, building, or home contents item) from a policy whilst other risk items are kept on the policy.
@@ -197,11 +227,9 @@ async def apex_categorise(text, subject=None):
                                                 * Email requests for help with payments, payment receipts or payment success verification on the online/app platforms.
                                                 * Requests for quotes to add a new risk item to an existing policy.
                                      
-                                    vehicle tracking: Emails sent for capturing of vehicle tracking device details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate details. The category handles emails from customers where the client sends through vehicle/car tracking device certificate for verification or capture by the insurance company.
-
-                                    bad service/experience: Emails about complaints and negative feedback emails from customers indicating bad service or experience related to our products or services. Use this category where the customer's email expresses frustration/irratatedness or an overall sense of bad service/experience related to a product. service, interaction, experience or lack of response from the insurance company. If the email reveals evidence of bad service/experience then this category must be seriously considered before all other categories to prevent potential reputational damage to the insurance company.
-                                    
                                     claims: Emails regarding capturing/registering of an insurance claim for the customer's insurance policy. This also includes emails for following up on an existing insurance claim that has already been submitted. These emails will entail the customer making an insurance claim against their policy. The claim can be for a loss/damage to any of their insured risks or services which incldue vehicles, building, home contents, portable possessions, geysers etc. Requests for claims history or a previous claims summary related to a policy should be classified as "document request" and not claims as this does not relate to the registering of a new claim or following up on an existing claim.
+                                    
+                                    **NOTE**: If customer complains about claims handling/process, use "bad service/experience" instead.
                                     
                                     refund request: Request from email sender for a refund related to the cancellation of a newly taken or existing policy or related insurance services. This category includes new refund requests or follow ups on an existing request. In instances where the customer requests for a cancellation and a refund then the classification should be "retentions" as the retentions department will need to process the cancellation before the refund can be processed.
                                     
@@ -218,8 +246,6 @@ async def apex_categorise(text, subject=None):
                                     assist: Emails requsting roadside assistance, towing assistance or home assist.  Roadside assistance includes 24/7 support for assistance with issues like flat tyres, flat/dead batteries and locked keys requiring locksmith services. Towing assistance includes support for towing s vehicle to the nearest place of safety or a designated repairer. Home assist includes request for assitance with a home emergency where the customer needs urgent help from the services of a plumber, electrician, locksmith or glazier (network of home specialists). 
                                                                            
                                     If the email cannot be classified into one of the above categories, please classify it as "other". 
-                                    p
-                                    Do not use any classifications, except for those above.
  
                                 2. Provide a short explanation for the classification in one sentence only.
                                 
@@ -228,8 +254,9 @@ async def apex_categorise(text, subject=None):
                                     b. Identify if there are any requests, questions, or tasks in the latest email that require a response or action.
                                     c. If the latest email indicates that action is required, respond with "yes". Otherwise, respond with "no".
                                     d. All emails classified as Vehicle tracking will have an action required.
-                                    e. Do not use any other classification other than "yes" or "no" for action required.
-                                    f. Do not use any other classification other than the ones provided above for classification.
+                                    e. All emails classified as bad service/experience will have an action required.
+                                    f. Do not use any other classification other than "yes" or "no" for action required.
+                                    g. Do not use any other classification other than the ones provided above for classification.
                                     
                                 4. Classify the sentiment of the email as Positive, Neutral, or Negative. Only classify sentiment when the customer expresses an apparent sentiment towards the products or services offered by the company. Positive to be used if the client expresses satisfaction or offers a compliment on service received. If there is not apparent sentiment then use Neutral.
 
@@ -242,6 +269,7 @@ async def apex_categorise(text, subject=None):
                                    - In many email formats, older messages are indented or preceded by ">" or other quote markers.
 
                                 2. CLASSIFICATION PRIORITY:
+                                   - **ALWAYS CHECK FOR COMPLAINT LANGUAGE FIRST** before considering topic-based classification
                                    - ALWAYS prioritize the content of the latest email for classification, even if it's brief.
                                    - The subject line should be considered but given lower priority than the actual message content.
                                    - When the latest email clearly indicates a purpose (e.g., "Please send me my policy document"), 
@@ -253,15 +281,14 @@ async def apex_categorise(text, subject=None):
                                      b) The latest email explicitly references previous context (e.g., "As discussed below...")
                                      c) The latest email would be ambiguous without thread context
                                 
-                                4. EXAMPLES OF PROPER THREAD ANALYSIS:
-                                   - Example 1: Latest email says "Please send me my policy document" but thread is about a claim
-                                     → Classify as "document request" (prioritize latest message)
-                                   - Example 2: Latest email says "Please help with this" and previous message discusses vehicle tracking
-                                     → Use thread context to classify as "vehicle tracking"
-                                   - Example 3: Latest email discusses multiple topics
-                                     → Prioritize based on the main request in the latest email
+                                4. EXAMPLES OF PROPER CLASSIFICATION:
+                                   - Example 1: "The tracking device installation was poorly done" → "bad service/experience" (complaint overrides topic)
+                                   - Example 2: "Please find attached my tracking certificate" → "vehicle tracking" (neutral request)
+                                   - Example 3: "Your claims team is very slow and unprofessional" → "bad service/experience" (complaint overrides topic)
+                                   - Example 4: "I need to submit a claim for my vehicle" → "claims" (neutral request)
                                 
                                 5. COMMON PITFALLS TO AVOID:
+                                   - Don't classify based on topic keywords alone - check for complaint sentiment first
                                    - Don't be misled by a subject line that doesn't match the latest email content
                                    - Don't classify based on previous messages if the latest email has changed the topic
                                    - Don't assume the topic hasn't changed just because it's the same thread
@@ -427,7 +454,8 @@ async def apex_categorise(text, subject=None):
 # LLM AGENT TO CHECK IF THE CLASSIFICATION HAS BEEN DONE CORRECTLTY AND ALIGNS WITH CATEGORISATION PRIORITIES
 async def apex_prioritize(text, category_list, subject=None):
     """
-    Specialized agent to validate the apex classification and priortise the final classification based on a priorty list and the context of the email.
+    Specialized agent to validate the apex classification and prioritise the final classification based on a priority list and the context of the email.
+    Enhanced with complaint detection logic.
     """
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     subject_info = f"[Subject: {subject}] " if subject else ""
@@ -441,18 +469,29 @@ async def apex_prioritize(text, category_list, subject=None):
             {"role": "system",
              "content": """You are an intelligent assistant specialized in analyzing email content and a list of possible categories that the email was classified into. Your task is to determine the single most appropriate final category from the list.
 
+                CRITICAL COMPLAINT DETECTION RULE:
+                - If "bad service/experience" is in the category list AND the email contains complaint language, dissatisfaction, or negative experiences, ALWAYS select "bad service/experience" as the final category, regardless of other topics mentioned.
+                
+                COMPLAINT INDICATORS to look for:
+                - "poorly done", "bad service", "disappointed", "frustrated", "unhappy", "terrible", "awful"
+                - "had to visit multiple times", "took too long", "not satisfied", "unacceptable"
+                - "waste of time", "incompetent", "rude", "poor quality", "unprofessional"
+                - Any expression of dissatisfaction with service delivery, quality, or experience
+
                 IMPORTANT: This is a two-step decision process:
 
-                STEP 1: EVALUATE THE FIRST CATEGORY IN THE LIST
-                - The list of categories is in order of relevance as determined by the initial classifier.
-                - The first category in the list is the primary classification.
-                - CAREFULLY examine the latest email in the thread to determine if this first category clearly aligns with the actual request or topic of the latest email.
-                - If the first category in the list clearly matches the latest email's content and purpose, SELECT IT AS THE FINAL CATEGORY. Do not proceed to Step 2.
-                - The latest email in the thread is always the most important for making this determination.
+                STEP 1: CHECK FOR COMPLAINTS FIRST
+                - Scan the email content for complaint language and negative sentiment
+                - If complaint language is detected AND "bad service/experience" is in the category list, SELECT IT immediately
+                - This overrides all other considerations including the priority list below
 
-                STEP 2: ONLY IF NECESSARY - CONSIDER MULTIPLE CATEGORIES
-                - ONLY proceed to this step if the first category does NOT clearly match the latest email content.
-                - If multiple categories seem equally applicable, or if there's genuine ambiguity, THEN use the priority list below to make your final decision:
+                STEP 2: ONLY IF NO COMPLAINTS - EVALUATE CATEGORIES NORMALLY
+                - If no complaint language is detected, proceed with normal evaluation
+                - The list of categories is in order of relevance as determined by the initial classifier
+                - The first category in the list is the primary classification
+                - CAREFULLY examine the latest email in the thread to determine if this first category clearly aligns with the actual request or topic of the latest email
+                - If the first category in the list clearly matches the latest email's content and purpose, SELECT IT AS THE FINAL CATEGORY
+                - If multiple categories seem equally applicable, or if there's genuine ambiguity, use the priority list below:
                     
                     Priority | Category
                     ---------|---------------------------
@@ -471,25 +510,25 @@ async def apex_prioritize(text, category_list, subject=None):
 
                 EXAMPLES:
 
-                Example 1: CLEAR MATCH - KEEP FIRST CATEGORY
-                - Email categories provided: ["document request", "online/app", "amendments"]
-                - Latest email clearly asks for policy documents
-                - Decision: Select "document request" as final category
-                - Explanation: The first category clearly matches the email content, so we keep it regardless of priority list
+                Example 1: COMPLAINT DETECTED - OVERRIDE EVERYTHING
+                - Email content: "The tracking device installation was poorly done"
+                - Categories: ["vehicle tracking", "bad service/experience", "other"]
+                - Decision: Select "bad service/experience" (complaint language detected)
+                - Explanation: The email expresses dissatisfaction with service quality, overriding the topic-based classification
 
-                Example 2: GENUINE AMBIGUITY - USE PRIORITY LIST
-                - Email categories provided: ["claims", "vehicle tracking", "amendments"]  
-                - Latest email discusses both tracking device installation and a vehicle claim with equal emphasis
-                - Decision: Select "vehicle tracking" as final category
-                - Explanation: Since both are equally applicable, we use the priority list (vehicle tracking is priority 3, claims is priority 7)
+                Example 2: NO COMPLAINT - CLEAR MATCH
+                - Email content: "Please send me my policy document"
+                - Categories: ["document request", "online/app", "amendments"]
+                - Decision: Select "document request" (first category clearly matches, no complaints)
+                - Explanation: The first category clearly matches the email content
 
-                Example 3: FIRST CATEGORY DOESN'T MATCH - FIND CORRECT ONE
-                - Email categories provided: ["other", "amendments", "document request"]
-                - Latest email clearly requests a change to the customer's vehicle details
-                - Decision: Select "amendments" as final category
-                - Explanation: The first category doesn't match the content, but "amendments" clearly does
-                
-                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT. Please mention that you have considered the priority list order in your reasoning if it was considered/applicable.
+                Example 3: NO COMPLAINT - USE PRIORITY LIST
+                - Email content: "I need help with both my vehicle and a claim"
+                - Categories: ["claims", "vehicle tracking", "amendments"]  
+                - Decision: Select "vehicle tracking" based on priority list (priority 3 vs 6)
+                - Explanation: Both categories apply equally, so priority list determines selection
+
+                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT. Mention if complaint language was the determining factor, or if you used the priority list.
 
                 Use the following JSON format for your response:
                 {
@@ -499,7 +538,7 @@ async def apex_prioritize(text, category_list, subject=None):
             },
             {
                 "role": "user",
-                "content": f"Analyze this email chain and the list of categories that this email applies to provide a single category classification for the email based primarily on the content of the latest email:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
+                "content": f"Analyze this email chain and the list of categories to provide a single category classification. First check for complaint language, then evaluate normally:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
             }
         ]
         
