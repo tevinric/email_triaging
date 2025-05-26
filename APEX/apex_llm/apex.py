@@ -368,13 +368,31 @@ async def apex_categorise(text, subject=None):
                                    - Don't classify based on previous messages if the latest email has changed the topic
                                    - Don't assume the topic hasn't changed just because it's the same thread
 
-                                Ensure your output conforms to the following JSON format with the following keys:
+                               IMPORTANT: Ensure your output conforms to the following JSON format. Replace the placeholder descriptions with actual content:
                                 {  
-                                "classification": ["category1", "category2", "category3"],  
-                                "rsn_classification": "answer",
-                                "action_required": "answer",  
-                                "sentiment": "answer"
-                                }"""
+                                "classification": ["primary_category", "secondary_category_if_applicable", "tertiary_category_if_applicable"],  
+                                "rsn_classification": "Provide a clear, specific explanation for why you chose this classification based on the email content",
+                                "action_required": "yes or no only",  
+                                "sentiment": "Positive, Neutral, or Negative only"
+                                }
+
+                                EXAMPLE OF CORRECT OUTPUT:
+                                {
+                                "classification": ["other"],
+                                "rsn_classification": "Email contains a vehicle inspection certificate being submitted for record-keeping purposes, which doesn't fit into specific service categories",
+                                "action_required": "yes",
+                                "sentiment": "Neutral"
+                                }
+
+                                ANOTHER EXAMPLE:
+                                {
+                                "classification": ["bad service/experience"],
+                                "rsn_classification": "Customer expresses frustration about poor installation service quality, indicating dissatisfaction with service delivery",
+                                "action_required": "yes",
+                                "sentiment": "Negative"
+                                }
+
+                                DO NOT use placeholder text like "answer" in your response. Always provide specific, meaningful content for each field."""
             },
             {"role": "user",
             "content": f"Please summarize the following text:\n\n{cleaned_text}"}
