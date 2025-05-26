@@ -181,7 +181,7 @@ async def apex_categorise(text, subject=None):
         deployment = "gpt-4o"
         messages = [  
             {"role": "system",
-            "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of defined tasks. You must accomplish the following list of tasks: 
+            "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of defined tasks for a South African insurance company. You must accomplish the following list of tasks: 
 
                                 1. Classify the email content according to the classification categories below. You must return a python list of the top 3 possible categories that the email context aligns to (only if one or more categories apply). The list must always have the top related category as the first element with the third element (if applicable) being the least related. Follow the chronological order of the email conversation when providing the classification and ensure that the latest response is used for classification. Strictly use the following category mapping only:
 
@@ -192,31 +192,33 @@ async def apex_categorise(text, subject=None):
                                                 * Add change or remove home contents or home content details, contents insured value, security updates, general home contents cover queries.
                                                 * Add change or remove portable possesions or portable possession items details (These include small insurable items such as laptops, tablets, jewellery, cellphones, cameras, etc).
                                                 * Email requesting items to be insured at different addresses including car/ building / home contents, i.e a split risk. A split risk refers to the need for a customer to insure goods at more than one residential address.
+                                                * Email requests from Banks/Banking institutions to change the banking details of the policy holder. This category applies to a bank requesting the insurance company to change the debit order details for the policy holder.
+                                                * Email requests for Policy reinstatements. This includes requests to reinstate a policy that has been previously cancelled or terminated.
+                                                * Email requests for help with payments, payment receipts or payment success verification on the online/app platforms.
+                                                * Requests for quotes to add a new risk item to an existing policy.
                                      
-                                    vehicle tracking: Email containing a shared tracking device fitment certification by the sender for capturing of vehicle inspection details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate or vehicle fitness certificate or any email related to vehicle tracking device(s). Emails for document requests or documents that are addressed to Autogen Tracking <tracking@autogen.co.za> will be classified as Vehicle tracking unless there is a specific request for something else.
+                                    vehicle tracking: Emails sent for capturing of vehicle tracking device details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate details. The category handles emails from customers where the client sends through vehicle/car tracking device certificate for verification or capture by the insurance company.
 
-                                    bad service/experience: Emails about complaints and negative feedback emails from customers indicating bad service or experience related to our products or services.
+                                    bad service/experience: Emails about complaints and negative feedback emails from customers indicating bad service or experience related to our products or services. Use this category where the customer's email expresses frustration/irratatedness or an overall sense of bad service/experience related to a product. service, interaction, experience or lack of response from the insurance company. If the email reveals evidence of bad service/experience then this category must be seriously considered before all other categories to prevent potential reputational damage to the insurance company.
                                     
-                                    claims: Emails regarding capturing of an insurance claim against a policy or following up on an existing insurance claim that has been submitted. These emails will entail the customer making an insurance claim against their policy. The claim can be for a loss/damage to any of their insured risks or services which incldue vehicles, building, home contents, portable possessions, geysers etc.
+                                    claims: Emails regarding capturing/registering of an insurance claim for the customer's insurance policy. This also includes emails for following up on an existing insurance claim that has already been submitted. These emails will entail the customer making an insurance claim against their policy. The claim can be for a loss/damage to any of their insured risks or services which incldue vehicles, building, home contents, portable possessions, geysers etc. Requests for claims history or a previous claims summary related to a policy should be classified as "document request" and not claims as this does not relate to the registering of a new claim or following up on an existing claim.
                                     
-                                    refund request: Request from email sender for a refund related to a new or existing policy or related services. Including new refund request or follow up on an existing request.
+                                    refund request: Request from email sender for a refund related to the cancellation of a newly taken or existing policy or related insurance services. This category includes new refund requests or follow ups on an existing request. In instances where the customer requests for a cancellation and a refund then the classification should be "retentions" as the retentions department will need to process the cancellation before the refund can be processed.
                                     
-                                    document request: Email sender requests for a document to be sent to them. Requested Documents may include Policy schedule documents, claims history, noting of interest, tax letters, cross border documents, statement of services or benefits, etc. Any request for an actual document related to the client and their insurance product. 
+                                    document request: Email sender requests for a document to be sent to them. Requested Documents may include Policy schedule documents, noting of interest, tax letters, cross border documents, statement of services or benefits, claims history, previous claims summary etc. Any request for an actual document related to the client and their insurance product. 
 
-                                    online/app: Emais related to System errors or system queries. Sytems include the online websites and/or applications.
+                                    online/app: Emails related to System errors or system queries. Systems include the online websites and/or applications. Excludes system errors related to payments, payment receipts or payment success verification on the online/app platforms.
 
-                                    retentions: Email requests for Policy reinstatements, policy cancellation/termination of the entire policy (not just individual risk items), cancellations related to annual review queries, refunds after cancellation (must be cancelled customer). Use this category when the customer email requests cancelling a policy in its entirety, which usually includes all risk items on the policy.
+                                    retentions: Email requests for policy cancellation/termination of the entire policy (not just individual risk items), cancellations related to annual review queries, refunds after cancellation (must be cancelled customer). Use this category when the customer email requests cancelling a policy in its entirety, which usually includes all risk items on the policy.
                                     
-                                    request for quote: Emails from the customer requesting an insurance quotation or a request to undergo the quotation/underwriting process. A quotation will generally provide the premium the customer must pay for insuring one or more risk items.
-                                    
-                                    debit order switch: Email requests from Banks/Banking institutions to change the banking details of the policy holder. This category applies to a bank requesting the insurance company to change the debit order details for the policy holder.
+                                    request for quote: Emails from the customer requesting an insurance quotation or a request to undergo the quotation/underwriting process. A quotation will generally provide the premium the customer must pay for insuring one or more risk items. This excludes requests for quotations that include adding a new risk item to an existing policy, which should be classified as "amendments". Any request to add something new onto a policy that already exist will be classified as "amendments" and not "request for quote". Requests for a quotation will only be used when the customer asks for a quotation and there is no evidence or reference to an existing policy or risk item.
                                                                         
                                     previous insurance checks/queries : Email requests or queries related to a Previous Insurance (PI) check, verification or validation.
 
                                     assist: Emails requsting roadside assistance, towing assistance or home assist.  Roadside assistance includes 24/7 support for assistance with issues like flat tyres, flat/dead batteries and locked keys requiring locksmith services. Towing assistance includes support for towing s vehicle to the nearest place of safety or a designated repairer. Home assist includes request for assitance with a home emergency where the customer needs urgent help from the services of a plumber, electrician, locksmith or glazier (network of home specialists). 
                                                                            
                                     If the email cannot be classified into one of the above categories, please classify it as "other". 
-                                    
+                                    p
                                     Do not use any classifications, except for those above.
  
                                 2. Provide a short explanation for the classification in one sentence only.
@@ -456,18 +458,17 @@ async def apex_prioritize(text, category_list, subject=None):
                     ---------|---------------------------
                     1        | assist   
                     2        | bad service/experience
-                    3        | vehicle tracking
-                    4        | debit order switch   
-                    5        | retentions
-                    6        | amendments
-                    7        | claims
-                    8        | refund request
-                    9        | online/app
-                    10       | request for quote
-                    11       | document request
-                    12       | other
-                    13       | previous insurance checks/queries
-                
+                    3        | vehicle tracking 
+                    4        | retentions
+                    5        | amendments
+                    6        | claims
+                    7        | refund request
+                    8        | online/app
+                    9        | request for quote
+                    10       | document request
+                    11       | other
+                    12       | previous insurance checks/queries
+
                 EXAMPLES:
 
                 Example 1: CLEAR MATCH - KEEP FIRST CATEGORY
@@ -488,7 +489,7 @@ async def apex_prioritize(text, category_list, subject=None):
                 - Decision: Select "amendments" as final category
                 - Explanation: The first category doesn't match the content, but "amendments" clearly does
                 
-                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT.
+                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT. Please mention that you have considered the priority list order in your reasoning if it was considered/applicable.
 
                 Use the following JSON format for your response:
                 {
