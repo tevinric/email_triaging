@@ -32,3 +32,9 @@ EMAIL_FETCH_INTERVAL = 30
 AZURE_STORAGE_CONNECTION_STRING = os.environ.get('AZURE_STORAGE_CONNECTION_STRING')
 BLOB_CONTAINER_NAME = os.environ.get('BLOB_CONTAINER_NAME')
 AZURE_STORAGE_PUBLIC_URL = os.environ.get('AZURE_STORAGE_PUBLIC_URL')  # Public URL for blob storage account
+
+EMAIL_TO_FOLDER_MAPPING = {
+    "onlinesupport@company.co.za": "onlinesupport",
+    "policyservices@company.co.za": "policyservices",
+
+}
