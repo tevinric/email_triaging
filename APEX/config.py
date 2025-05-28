@@ -43,11 +43,21 @@ DIGITALCOMMS_MAILS=os.environ.get('DIGITALCOMMS_MAILS')
 CONNEX_TEST=os.environ.get('CONNEX_TEST')
 
 # Configure the mail-template mappings for autoresponse mails
-EMAIL_TO_FOLDER_MAPPING = {
-    ONLINESUPPORT_MAILS: "onlinesupport",
-    POLICY_SERVICES: "policyservice",
-    TRACKING_MAILS: "tracking",
-    DIGITALCOMMS_MAILS: "digitalcomms",
-    CLAIMS_MAILS: "claims",
+def get_email_prefix(email):
+    if email and "@" in email:
+        return email.split("@")[0]
+    return email
 
+ONLINESUPPORT_MAILS_MAPPING = get_email_prefix(ONLINESUPPORT_MAILS)
+POLICY_SERVICES_MAPPING = get_email_prefix(POLICY_SERVICES)
+TRACKING_MAILS_MAPPING = get_email_prefix(TRACKING_MAILS)
+CLAIMS_MAILS_MAPPING = get_email_prefix(CLAIMS_MAILS)
+DIGITALCOMMS_MAILS_MAPPING = get_email_prefix(DIGITALCOMMS_MAILS)
+
+EMAIL_TO_FOLDER_MAPPING = {
+    ONLINESUPPORT_MAILS_MAPPING: "onlinesupport",
+    POLICY_SERVICES_MAPPING: "policyservice",
+    "tracking-aitest": "tracking",
+    DIGITALCOMMS_MAILS_MAPPING: "digitalcomms",
+    CLAIMS_MAILS_MAPPING: "claims",
 }
