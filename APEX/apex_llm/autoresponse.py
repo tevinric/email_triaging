@@ -9,7 +9,7 @@ import base64
 from bs4 import BeautifulSoup
 from azure.storage.blob.aio import BlobServiceClient
 from email_processor.email_client import get_access_token
-from config import AZURE_STORAGE_CONNECTION_STRING, BLOB_CONTAINER_NAME, AZURE_STORAGE_PUBLIC_URL, EMAIL_TO_FOLDER_MAPPING
+from config import AZURE_STORAGE_CONNECTION_STRING, BLOB_CONTAINER_NAME, AZURE_STORAGE_PUBLIC_URL, EMAIL_TO_FOLDER_MAPPING, EMAIL_SUBJECT_MAPPING
 
 # Default mapping from email address to blob store folder
 # If not defined in config.py, use the empty mapping
@@ -130,6 +130,27 @@ async def get_template_from_blob(recipient_email):
     except Exception as e:
         print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Error retrieving template from blob storage: {str(e)}")
         return None, None
+
+def get_subject_line_for_template(template_folder, original_subject):
+    """
+    Get the appropriate subject line for the autoresponse based on template folder.
+    
+    Args:
+        template_folder (str): The template folder name
+        original_subject (str): Original email subject line
+        
+    Returns:
+        str: Subject line for the autoresponse
+    """
+    try:
+        # Get custom subject line from mapping, or use default
+        if template_folder and template_folder in EMAIL_SUBJECT_MAPPING:
+            return EMAIL_SUBJECT_MAPPING[template_folder]
+        else:
+            return EMAIL_SUBJECT_MAPPING.get("default", "Thank you for contacting us")
+    except Exception as e:
+        print(f"Error getting subject line for template {template_folder}: {str(e)}")
+        return "Thank you for contacting us"
         
 async def process_template_images(template_content, template_folder):
     """
@@ -554,13 +575,16 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
             </body>
             </html>
             """
+            template_folder = None
         
         # Process the template to replace variables and update image references
         # NO content manipulation - preserve original encoding
         processed_template = await process_template(template_content, template_folder, email_data)
         
-        # Create subject line for autoresponse
-        subject = f"Re: {email_subject}"
+        # Create subject line for autoresponse using the new mapping
+        subject = get_subject_line_for_template(template_folder, email_subject)
+        
+        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Using subject line: {subject} for template: {template_folder}")
         
         # Extract plain text version from HTML (simplified)
         plain_text = "Thank you for your email. We have received your message and will respond as soon as possible. This is an automated response. Please do not reply to this email."
