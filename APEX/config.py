@@ -61,3 +61,13 @@ EMAIL_TO_FOLDER_MAPPING = {
     DIGITALCOMMS_MAILS_MAPPING: "digitalcomms",
     CLAIMS_MAILS_MAPPING: "claims",
 }
+
+# Configure subject lines per template
+EMAIL_SUBJECT_MAPPING = {
+    "onlinesupport": "Thank you for contacting Online Support",
+    "policyservice": "Thank you for contacting Policy Services", 
+    "tracking": "Thank you for contacting Vehicle Tracking",
+    "claims": "Thank you for contacting Claims Department",
+    "digitalcomms": "Thank you for contacting Digital Communications",
+    "default": "Thank you for contacting us"
+}
