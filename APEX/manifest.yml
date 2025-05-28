@@ -144,6 +144,25 @@ spec:
                 name: apex-credentials
                 key: CONNEX_TEST  
 
+          # AZURE BLOB STORAGE SETTINGS
+          - name: AZURE_STORAGE_CONNECTION_STRING
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_STORAGE_CONNECTION_STRING
+          
+          - name: BLOB_CONTAINER_NAME
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: BLOB_CONTAINER_NAME
+          
+          - name: AZURE_STORAGE_PUBLIC_URL
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_STORAGE_PUBLIC_URL
+
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
