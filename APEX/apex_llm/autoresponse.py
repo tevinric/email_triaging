@@ -64,10 +64,23 @@ async def get_template_from_blob(recipient_email):
         
         # Check if blob exists
         if await blob_client.exists():
-            # Download blob content
+            # Download blob content with explicit encoding handling
             download_stream = await blob_client.download_blob()
-            template_content = await download_stream.readall()
-            return template_content.decode('utf-8'), folder_name
+            template_content_bytes = await download_stream.readall()
+            
+            # Try to decode with UTF-8 first, fall back to other encodings if needed
+            try:
+                template_content = template_content_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    template_content = template_content_bytes.decode('utf-8', errors='replace')
+                    print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Warning: Some characters replaced during UTF-8 decoding")
+                except Exception as e:
+                    # Last resort - try Windows-1252 encoding (common for HTML templates)
+                    template_content = template_content_bytes.decode('windows-1252', errors='replace')
+                    print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Used Windows-1252 encoding fallback")
+            
+            return template_content, folder_name
         else:
             # Try fallback to html extension
             alt_template_path = f"{folder_name}/{mailbox_name}@{domain}.html"
@@ -75,8 +88,18 @@ async def get_template_from_blob(recipient_email):
             
             if await blob_client.exists():
                 download_stream = await blob_client.download_blob()
-                template_content = await download_stream.readall()
-                return template_content.decode('utf-8'), folder_name
+                template_content_bytes = await download_stream.readall()
+                
+                # Apply same encoding handling
+                try:
+                    template_content = template_content_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        template_content = template_content_bytes.decode('utf-8', errors='replace')
+                    except Exception as e:
+                        template_content = template_content_bytes.decode('windows-1252', errors='replace')
+                
+                return template_content, folder_name
             else:
                 # Try one more fallback to a simple named file
                 simple_template_path = f"{folder_name}/{folder_name}.html"
@@ -84,8 +107,18 @@ async def get_template_from_blob(recipient_email):
                 
                 if await blob_client.exists():
                     download_stream = await blob_client.download_blob()
-                    template_content = await download_stream.readall()
-                    return template_content.decode('utf-8'), folder_name
+                    template_content_bytes = await download_stream.readall()
+                    
+                    # Apply same encoding handling
+                    try:
+                        template_content = template_content_bytes.decode('utf-8')
+                    except UnicodeDecodeError:
+                        try:
+                            template_content = template_content_bytes.decode('utf-8', errors='replace')
+                        except Exception as e:
+                            template_content = template_content_bytes.decode('windows-1252', errors='replace')
+                    
+                    return template_content, folder_name
                 else:
                     print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Template not found in blob storage for folder: {folder_name}")
                     # Return None
@@ -112,7 +145,7 @@ async def process_template_images(template_content, template_folder):
         return template_content
     
     try:
-        # Parse HTML using BeautifulSoup
+        # Parse HTML using BeautifulSoup with proper HTML parser
         soup = BeautifulSoup(template_content, 'html.parser')
         
         # Find all image tags
@@ -121,13 +154,17 @@ async def process_template_images(template_content, template_folder):
         # Base URL for images in blob storage - images are in the same folder as the template
         base_url = f"{AZURE_STORAGE_PUBLIC_URL}/{BLOB_CONTAINER_NAME}/{template_folder}"
         
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processing {len(img_tags)} images with base URL: {base_url}")
+        
         # Update image src attributes
         for img in img_tags:
             if img.get('src'):
                 src = img['src']
+                original_src = src
                 
                 # Check if already an absolute URL
                 if src.startswith('http'):
+                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Skipping absolute URL: {src}")
                     continue
                 
                 # Replace backslashes with forward slashes
@@ -140,21 +177,25 @@ async def process_template_images(template_content, template_folder):
                     # The images are in the same folder as the HTML file
                     absolute_url = f"{base_url}/{img_filename}"
                     img['src'] = absolute_url
+                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated _files/ image: {original_src} -> {absolute_url}")
                 elif '/' in src:
                     # For any other path with folders
                     img_filename = src.split('/')[-1]
                     absolute_url = f"{base_url}/{img_filename}"
                     img['src'] = absolute_url
+                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated path image: {original_src} -> {absolute_url}")
                 else:
                     # For simple filename references
                     absolute_url = f"{base_url}/{src}"
                     img['src'] = absolute_url
+                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated simple image: {original_src} -> {absolute_url}")
                 
         # Find all background image references in inline styles
         elements_with_style = soup.find_all(lambda tag: tag.has_attr('style') and 'background-image' in tag['style'])
         
         for elem in elements_with_style:
             style = elem['style']
+            original_style = style
             # Use regex to find and replace URL references
             url_matches = re.findall(r'url\([\'"]?([^\'"]+)[\'"]?\)', style)
             
@@ -176,9 +217,11 @@ async def process_template_images(template_content, template_folder):
                     absolute_url = f"{base_url}/{url}"
                     style = style.replace(f"url({url})", f"url({absolute_url})")
             
-            elem['style'] = style
+            if style != original_style:
+                elem['style'] = style
+                print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated background image style")
         
-        # Convert back to string
+        # Convert back to string - preserve original formatting as much as possible
         return str(soup)
         
     except Exception as e:
@@ -189,6 +232,7 @@ async def process_template_images(template_content, template_folder):
 async def process_template(template_content, template_folder, email_data):
     """
     Process the template by replacing variables with actual values and updating image references.
+    IMPORTANT: Template is taken as-is with minimal manipulation per user requirements.
     
     Args:
         template_content (str): The HTML template content
@@ -206,7 +250,9 @@ async def process_template(template_content, template_folder, email_data):
         
         # Process image references to use absolute URLs for blob storage
         if template_folder:
-            template_content = await process_template_images(template_content, template_folder)
+            processed_content = await process_template_images(template_content, template_folder)
+        else:
+            processed_content = template_content
         
         # Generate a reference ID (could be based on the email ID or a UUID)
         reference_id = email_data.get('internet_message_id', '')
@@ -217,12 +263,16 @@ async def process_template(template_content, template_folder, email_data):
         if len(reference_id) > 10:
             reference_id = reference_id[-10:]
         
-        # Replace variables in the template
-        processed_content = template_content.replace('{{REFERENCE_ID}}', reference_id)
+        # Only replace the {{REFERENCE_ID}} placeholder - leave everything else as-is
+        processed_content = processed_content.replace('{{REFERENCE_ID}}', reference_id)
         
-        # Replace any dynamic variables with customer data
-        customer_name = email_data.get('from', '').split('@')[0].capitalize()
-        processed_content = processed_content.replace('Dear brand Customer', f'Dear {customer_name}')
+        # REMOVED: Customer name replacement per user requirement
+        # The template should be taken as-is without name manipulation
+        # OLD CODE REMOVED:
+        # customer_name = email_data.get('from', '').split('@')[0].capitalize()
+        # processed_content = processed_content.replace('Dear brand Customer', f'Dear {customer_name}')
+        
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template - Template processed with reference ID: {reference_id}")
         
         return processed_content
         
@@ -232,7 +282,7 @@ async def process_template(template_content, template_folder, email_data):
 
 async def send_email(access_token, account, to_email, subject, body_html, body_text):
     """
-    Send a new email using Microsoft Graph API.
+    Send a new email using Microsoft Graph API with proper encoding.
     
     Args:
         access_token (str): Valid access token for Microsoft Graph API
@@ -249,8 +299,22 @@ async def send_email(access_token, account, to_email, subject, body_html, body_t
     
     headers = {
         'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',  # Explicitly specify UTF-8
     }
+    
+    # Ensure the HTML content is properly encoded and has correct charset declaration
+    if body_html and not body_html.startswith('<!DOCTYPE html>'):
+        # Add proper HTML structure with charset if missing
+        body_html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+</head>
+<body>
+{body_html}
+</body>
+</html>'''
     
     message_body = {
         'message': {
@@ -278,7 +342,11 @@ async def send_email(access_token, account, to_email, subject, body_html, body_t
     for attempt in range(max_retries):
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(endpoint, headers=headers, json=message_body) as response:
+                # Ensure JSON is properly encoded
+                import json
+                json_data = json.dumps(message_body, ensure_ascii=False)
+                
+                async with session.post(endpoint, headers=headers, data=json_data.encode('utf-8')) as response:
                     if response.status == 202:  # 202 Accepted indicates success for sendMail
                         print(f">> {timestamp} Script: autoresponse.py - Function: send_email - Email sent successfully to {to_email}")
                         return True
@@ -342,6 +410,7 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
             <html>
             <head>
                 <meta charset="UTF-8">
+                <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
             </head>
             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333;">
