@@ -64,10 +64,10 @@ EMAIL_TO_FOLDER_MAPPING = {
 
 # Configure subject lines per template
 EMAIL_SUBJECT_MAPPING = {
-    "onlinesupport": "Thank you for contacting Online Support",
-    "policyservice": "Thank you for contacting Policy Services", 
-    "tracking": "Thank you for contacting Vehicle Tracking",
-    "claims": "Thank you for contacting Claims Department",
-    "digitalcomms": "Thank you for contacting Digital Communications",
+    "onlinesupport": "Thank you for contacting us",
+    "policyservice": "Thank you for contacting us", 
+    "tracking": "Auto Reply",
+    "claims": "Auto Response",
+    "digitalcomms": "Auto Reply",
     "default": "Thank you for contacting us"
 }
