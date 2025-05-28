@@ -7,7 +7,6 @@ from config import EMAIL_ACCOUNTS, EMAIL_FETCH_INTERVAL, DEFAULT_EMAIL_ACCOUNT
 from apex_llm.apex_logging import create_log, add_to_log, log_apex_success, log_apex_fail, insert_log_to_db, check_email_processed, log_apex_intervention
 import datetime
 from apex_llm.apex_routing import ang_routings
-from email_processor.auto_response import send_auto_response  # Import the auto-response module
 
 
 
@@ -54,24 +53,6 @@ async def process_email(access_token, account, email_data, message_id):
             except Exception as e:
                 print(f">> {timestamp} Failed to mark already processed email as read: {str(e)}")
             return
-        
-        # NEW CODE: Send auto-response to the original sender
-        try:
-            print(f">> {timestamp} Sending auto-response to {original_sender} [Subject: {subject}]")
-            auto_response_sent = await send_auto_response(
-                access_token, 
-                original_sender, 
-                original_destination, 
-                subject,
-                sender_account=account  # Use the same account that received the email
-            )
-            if auto_response_sent:
-                print(f">> {timestamp} Auto-response sent successfully to {original_sender}")
-            else:
-                print(f">> {timestamp} Failed to send auto-response to {original_sender}, continuing with processing")
-        except Exception as auto_response_error:
-            print(f">> {timestamp} Error sending auto-response: {str(auto_response_error)}")
-            # Continue processing even if auto-response fails
         
         # Concatenate email data for APEX processing
         llm_text = " ".join([str(value) for key, value in email_data.items() if key != 'email_object'])

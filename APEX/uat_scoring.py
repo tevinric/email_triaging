@@ -383,9 +383,9 @@ async def main():
     print(f"Started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     # Configuration - modify these paths as needed
-    UAT_FOLDER = "uat_emails"  # Folder containing email files for testing
-    OUTPUT_CSV = f"apex_uat_results_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    
+    UAT_FOLDER = r"W:\Tevin\APEX-UAT\Catgeorized mails\Claims"  # Folder containing email files for testing
+    OUTPUT_CSV = f"apex_uat_results_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_Claims.csv"
+
     # Create UAT processor
     processor = UATEmailProcessor(UAT_FOLDER, OUTPUT_CSV)
     

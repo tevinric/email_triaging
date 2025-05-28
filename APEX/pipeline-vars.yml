@@ -5,7 +5,7 @@ variables:
     #K8sManifestDir: 
     SonarQubeApplication:
     SonarQubeContinueOnError:
-    #projectKey:
+    projectKey: AI_CoE_APEX_931e83f2-085c-491d-81ca-f261b8d005da
     #serviceLanguage:
     #RunUnitTests:
     #RunLintChecks:

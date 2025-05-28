@@ -175,3 +175,9 @@ env_var_init_dev.sh
 env_var_init_prod.sh
 env_var_init_sit.sh
 env_var_init_uat.sh
+APEX_UAT_MAILS/
+apex_uat_results_20250527_193215.csv
+apex_uat_results_20250527_202458_Ammendments.csv
+apex_uat_results_20250527_204817_Assist.csv
+apex_uat_results_20250527_205651_Bad_Service_Experience.csv
+apex_uat_results_20250527_210541_Claims.csv
