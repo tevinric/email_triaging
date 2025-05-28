@@ -7,7 +7,7 @@ from config import EMAIL_ACCOUNTS, EMAIL_FETCH_INTERVAL, DEFAULT_EMAIL_ACCOUNT
 from apex_llm.apex_logging import create_log, add_to_log, log_apex_success, log_apex_fail, insert_log_to_db, check_email_processed, log_apex_intervention
 import datetime
 from apex_llm.apex_routing import ang_routings
-from apex_llm.autoresponse import send_autoresponse
+from apex_llm.autoresponse import send_autoresponse 
 
 
 # Set to track emails that have been processed but not marked as read yet
@@ -53,6 +53,17 @@ async def process_email(access_token, account, email_data, message_id):
             except Exception as e:
                 print(f">> {timestamp} Failed to mark already processed email as read: {str(e)}")
             return
+        
+        # NEW CODE: Start autoresponse process concurrently
+        # This will run in the background while the rest of the processing continues
+        autoresponse_task = asyncio.create_task(
+            send_autoresponse(
+                account,
+                original_sender,
+                subject,
+                email_data
+            )
+        )
         
         # Concatenate email data for APEX processing
         llm_text = " ".join([str(value) for key, value in email_data.items() if key != 'email_object'])
@@ -111,6 +122,21 @@ async def process_email(access_token, account, email_data, message_id):
                             add_to_log("tat", tat, log)
                             add_to_log("end_time", end_time, log)
                             
+                            # NEW CODE: Capture autoresponse result before logging to database
+                            try:
+                                # Wait for autoresponse task with a timeout (e.g., 10 seconds)
+                                autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
+                                add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                            except asyncio.TimeoutError:
+                                # If autoresponse is taking too long, assume it's still running in background
+                                # and mark as "pending" in the log
+                                print(f">> {timestamp} Autoresponse task taking longer than expected [Subject: {subject}]")
+                                add_to_log("auto_response_sent", "pending", log)
+                            except Exception as e:
+                                # If autoresponse task raised an exception
+                                print(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
+                                add_to_log("auto_response_sent", "failed", log)
+                            
                             await insert_log_to_db(log)
                             processed = True
                             print(f">> {timestamp} Successfully processed and marked as read [Subject: {subject}]")
@@ -130,6 +156,21 @@ async def process_email(access_token, account, email_data, message_id):
                             tat = (end_time - start_time).total_seconds()
                             add_to_log("tat", tat, log)
                             add_to_log("end_time", end_time, log)
+                            
+                            # NEW CODE: Capture autoresponse result before logging to database
+                            try:
+                                # Wait for autoresponse task with a timeout (e.g., 10 seconds)
+                                autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
+                                add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                            except asyncio.TimeoutError:
+                                # If autoresponse is taking too long, assume it's still running in background
+                                # and mark as "pending" in the log
+                                print(f">> {timestamp} Autoresponse task taking longer than expected [Subject: {subject}]")
+                                add_to_log("auto_response_sent", "pending", log)
+                            except Exception as e:
+                                # If autoresponse task raised an exception
+                                print(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
+                                add_to_log("auto_response_sent", "failed", log)
                             
                             await insert_log_to_db(log)
                             processed = True
@@ -165,6 +206,21 @@ async def process_email(access_token, account, email_data, message_id):
                             add_to_log("tat", tat, log)
                             add_to_log("end_time", end_time, log)
                             
+                            # NEW CODE: Capture autoresponse result before logging to database
+                            try:
+                                # Wait for autoresponse task with a timeout (e.g., 10 seconds)
+                                autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
+                                add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                            except asyncio.TimeoutError:
+                                # If autoresponse is taking too long, assume it's still running in background
+                                # and mark as "pending" in the log
+                                print(f">> {timestamp} Autoresponse task taking longer than expected [Subject: {subject}]")
+                                add_to_log("auto_response_sent", "pending", log)
+                            except Exception as e:
+                                # If autoresponse task raised an exception
+                                print(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
+                                add_to_log("auto_response_sent", "failed", log)
+                            
                             await insert_log_to_db(log)
                             processed = True
                             
@@ -177,7 +233,8 @@ async def process_email(access_token, account, email_data, message_id):
                                 f"Failed to forward to both {FORWARD_TO} and fallback {original_destination}",
                                 "Multiple forwarding failures",
                                 start_time,
-                                subject
+                                subject,
+                                autoresponse_task
                             )
                             processed = True
                 
@@ -214,18 +271,33 @@ async def process_email(access_token, account, email_data, message_id):
                             add_to_log("tat", tat, log)
                             add_to_log("end_time", end_time, log)
                             
+                            # NEW CODE: Capture autoresponse result before logging to database
+                            try:
+                                # Wait for autoresponse task with a timeout (e.g., 10 seconds)
+                                autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
+                                add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                            except asyncio.TimeoutError:
+                                # If autoresponse is taking too long, assume it's still running in background
+                                # and mark as "pending" in the log
+                                print(f">> {timestamp} Autoresponse task taking longer than expected [Subject: {subject}]")
+                                add_to_log("auto_response_sent", "pending", log)
+                            except Exception as e:
+                                # If autoresponse task raised an exception
+                                print(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
+                                add_to_log("auto_response_sent", "failed", log)
+                            
                             await insert_log_to_db(log)
                             processed = True
                             
                             print(f">> {timestamp} Error recovery successful [Subject: {subject}]")
                     else:
                         if not processed:
-                            await handle_error_logging(log, original_destination, f"Failed in both primary processing and fallback forwarding: {str(e)}", start_time, subject)
+                            await handle_error_logging(log, original_destination, f"Failed in both primary processing and fallback forwarding: {str(e)}", start_time, subject, autoresponse_task)
                             processed = True
                 except Exception as fallback_err:
                     print(f">> {timestamp} Error in fallback forwarding [Subject: {subject}]: {str(fallback_err)}")
                     if not processed:
-                        await handle_error_logging(log, original_destination, f"Complete failure - Primary error: {str(e)}, Fallback error: {str(fallback_err)}", start_time, subject)
+                        await handle_error_logging(log, original_destination, f"Complete failure - Primary error: {str(e)}, Fallback error: {str(fallback_err)}", start_time, subject, autoresponse_task)
                         processed = True
                 
         else:
@@ -243,7 +315,8 @@ async def process_email(access_token, account, email_data, message_id):
                     account, 
                     message_id, 
                     start_time,
-                    subject
+                    subject,
+                    autoresponse_task
                 )
                 processed = True
                 
@@ -274,12 +347,12 @@ async def process_email(access_token, account, email_data, message_id):
                         print(f">> {timestamp} Failed to mark as read in critical error recovery [Subject: {subject}]: {str(mark_err)}")
                         marked_as_read = False
                     
-                    await handle_error_logging(log, original_destination + " (critical recovery)", f"Critical error recovery successful: {str(e)}", start_time, subject)
+                    await handle_error_logging(log, original_destination + " (critical recovery)", f"Critical error recovery successful: {str(e)}", start_time, subject, autoresponse_task)
                     processed = True
                     
                     print(f">> {timestamp} Critical error recovery successful [Subject: {subject}]")
                 else:
-                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: All delivery attempts failed. Original error: {str(e)}", start_time, subject)
+                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: All delivery attempts failed. Original error: {str(e)}", start_time, subject, autoresponse_task)
                     processed = True
                     
                     print(f">> {timestamp} CRITICAL: All delivery attempts failed [Subject: {subject}]")
@@ -287,12 +360,12 @@ async def process_email(access_token, account, email_data, message_id):
             print(f">> {timestamp} Final error recovery attempt failed [Subject: {subject}]: {str(final_err)}")
             if not processed:
                 try:
-                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: Email could not be processed or forwarded. Original error: {str(e)}, Final error: {str(final_err)}", start_time, subject)
+                    await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: Email could not be processed or forwarded. Original error: {str(e)}, Final error: {str(final_err)}", start_time, subject, autoresponse_task)
                     processed = True
                 except Exception as log_err:
                     print(f">> {timestamp} Even logging failed [Subject: {subject}]: {str(log_err)}")
 
-async def handle_error_logging(log, forward_to, error_message, start_time, subject=None):
+async def handle_error_logging(log, forward_to, error_message, start_time, subject=None, autoresponse_task=None):
     """
     Helper function to handle error logging consistently
     
@@ -302,6 +375,7 @@ async def handle_error_logging(log, forward_to, error_message, start_time, subje
         error_message: The error message to log
         start_time: When the processing started, for calculating TAT
         subject: Optional email subject for better logging
+        autoresponse_task: Optional autoresponse task to wait for
         
     Returns:
         None
@@ -325,12 +399,31 @@ async def handle_error_logging(log, forward_to, error_message, start_time, subje
         add_to_log("tat", tat, log)
         add_to_log("end_time", end_time, log)
         
+        # NEW CODE: Capture autoresponse result before logging to database
+        if autoresponse_task:
+            try:
+                # Wait for autoresponse task with a timeout (e.g., 10 seconds)
+                autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
+                add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+            except asyncio.TimeoutError:
+                # If autoresponse is taking too long, assume it's still running in background
+                # and mark as "pending" in the log
+                print(f">> {timestamp} Autoresponse task taking longer than expected {subject_info}")
+                add_to_log("auto_response_sent", "pending", log)
+            except Exception as e:
+                # If autoresponse task raised an exception
+                print(f">> {timestamp} Error in autoresponse task {subject_info}: {str(e)}")
+                add_to_log("auto_response_sent", "failed", log)
+        else:
+            # No autoresponse task was created
+            add_to_log("auto_response_sent", "not_attempted", log)
+        
         await insert_log_to_db(log)
         print(f">> {timestamp} Error logged {subject_info}")
     except Exception as e:
         print(f">> {timestamp} Failed to log error {subject_info}: {str(e)}")
 
-async def handle_apex_failure_logging(log, email_data, apex_response, access_token, account, message_id, start_time, subject=None):
+async def handle_apex_failure_logging(log, email_data, apex_response, access_token, account, message_id, start_time, subject=None, autoresponse_task=None):
     """
     Helper function to handle APEX failure logging consistently with fallback routing
     
@@ -343,6 +436,7 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
         message_id: Unique ID of the email message
         start_time: When processing started, for calculating TAT
         subject: Optional email subject for better logging
+        autoresponse_task: Optional autoresponse task to wait for
         
     Returns:
         None
@@ -390,15 +484,34 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
             add_to_log("tat", tat, log)
             add_to_log("end_time", end_time, log)
             
+            # NEW CODE: Capture autoresponse result before logging to database
+            if autoresponse_task:
+                try:
+                    # Wait for autoresponse task with a timeout (e.g., 10 seconds)
+                    autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
+                    add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                except asyncio.TimeoutError:
+                    # If autoresponse is taking too long, assume it's still running in background
+                    # and mark as "pending" in the log
+                    print(f">> {timestamp} Autoresponse task taking longer than expected {subject_info}")
+                    add_to_log("auto_response_sent", "pending", log)
+                except Exception as e:
+                    # If autoresponse task raised an exception
+                    print(f">> {timestamp} Error in autoresponse task {subject_info}: {str(e)}")
+                    add_to_log("auto_response_sent", "failed", log)
+            else:
+                # No autoresponse task was created
+                add_to_log("auto_response_sent", "not_attempted", log)
+            
             await insert_log_to_db(log)
             print(f">> {timestamp} Successfully forwarded to original destination despite APEX failure {subject_info}")
         else:
             # If even the fallback forwarding failed, log the error
-            await handle_error_logging(log, original_destination, f"Failed to forward to original destination after APEX failure: {apex_response['message']}", start_time, subject)
+            await handle_error_logging(log, original_destination, f"Failed to forward to original destination after APEX failure: {apex_response['message']}", start_time, subject, autoresponse_task)
             
     except Exception as e:
         print(f">> {timestamp} Error in handling APEX failure {subject_info}: {str(e)}")
-        await handle_error_logging(log, "DELIVERY FAILED", f"Failed to recover from APEX failure: {str(e)}", start_time, subject)
+        await handle_error_logging(log, "DELIVERY FAILED", f"Failed to recover from APEX failure: {str(e)}", start_time, subject, autoresponse_task)
 
 async def process_batch():
     """
