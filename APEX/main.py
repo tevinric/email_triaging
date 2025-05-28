@@ -7,7 +7,7 @@ from config import EMAIL_ACCOUNTS, EMAIL_FETCH_INTERVAL, DEFAULT_EMAIL_ACCOUNT
 from apex_llm.apex_logging import create_log, add_to_log, log_apex_success, log_apex_fail, insert_log_to_db, check_email_processed, log_apex_intervention
 import datetime
 from apex_llm.apex_routing import ang_routings
-
+from apex_llm.autoresponse import send_autoresponse
 
 
 # Set to track emails that have been processed but not marked as read yet
