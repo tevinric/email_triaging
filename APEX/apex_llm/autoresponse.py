@@ -151,10 +151,52 @@ def get_subject_line_for_template(template_folder, original_subject):
     except Exception as e:
         print(f"Error getting subject line for template {template_folder}: {str(e)}")
         return "Thank you for contacting us"
+
+async def validate_blob_storage_config():
+    """
+    Validate that blob storage configuration is properly set up.
+    
+    Returns:
+        bool: True if configuration is valid, False otherwise
+    """
+    if not AZURE_STORAGE_CONNECTION_STRING:
+        print("ERROR: AZURE_STORAGE_CONNECTION_STRING is not configured")
+        return False
+    
+    if not BLOB_CONTAINER_NAME:
+        print("ERROR: BLOB_CONTAINER_NAME is not configured")
+        return False
+    
+    if not AZURE_STORAGE_PUBLIC_URL:
+        print("ERROR: AZURE_STORAGE_PUBLIC_URL is not configured")
+        return False
+    
+    return True
+
+async def check_image_exists_in_blob(blob_container_client, template_folder, image_filename):
+    """
+    Check if an image file exists in blob storage.
+    
+    Args:
+        blob_container_client: Azure blob container client
+        template_folder (str): Template folder name
+        image_filename (str): Image filename to check
         
+    Returns:
+        bool: True if image exists, False otherwise
+    """
+    try:
+        image_path = f"{template_folder}/{image_filename}"
+        blob_client = blob_container_client.get_blob_client(image_path)
+        return await blob_client.exists()
+    except Exception as e:
+        print(f"Error checking if image exists in blob: {str(e)}")
+        return False
+
 async def process_template_images(template_content, template_folder):
     """
     Process the template to update image references to point to blob storage.
+    Enhanced with better error handling, validation, and comprehensive image reference processing.
     
     Args:
         template_content (str): HTML template content
@@ -166,104 +208,164 @@ async def process_template_images(template_content, template_folder):
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     if not template_content or not template_folder:
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Missing template content or folder")
+        return template_content
+    
+    # Validate blob storage configuration
+    if not await validate_blob_storage_config():
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Blob storage configuration invalid")
         return template_content
     
     try:
         # Parse HTML using BeautifulSoup with proper HTML parser
         soup = BeautifulSoup(template_content, 'html.parser')
         
-        # Find all image tags
-        img_tags = soup.find_all('img')
-        
         # Base URL for images in blob storage - images are in the same folder as the template
-        base_url = f"{AZURE_STORAGE_PUBLIC_URL}/{BLOB_CONTAINER_NAME}/{template_folder}"
+        base_url = f"{AZURE_STORAGE_PUBLIC_URL.rstrip('/')}/{BLOB_CONTAINER_NAME}/{template_folder}"
         
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processing {len(img_tags)} images with base URL: {base_url}")
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processing images with base URL: {base_url}")
         
-        # Update image src attributes
+        # Create blob container client for validation (optional - can be disabled for performance)
+        container_client = None
+        try:
+            blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+            container_client = blob_service_client.get_container_client(BLOB_CONTAINER_NAME)
+        except Exception as e:
+            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Error creating blob client for validation: {str(e)}")
+        
+        # Track processed images for debugging
+        processed_images = []
+        
+        # Find and process all img tags
+        img_tags = soup.find_all('img')
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(img_tags)} img tags")
+        
         for img in img_tags:
             if img.get('src'):
-                src = img['src']
-                original_src = src
+                original_src = img['src']
                 
-                # Check if already an absolute URL
-                if src.startswith('http'):
+                # Skip if already an absolute URL
+                if original_src.startswith('http'):
+                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Skipping absolute URL: {original_src}")
                     continue
                 
-                # Replace backslashes with forward slashes
-                src = src.replace('\\', '/')
+                # Clean up the source path
+                src = original_src.replace('\\', '/').strip()
+                img_filename = None
                 
-                # If the source has a file structure with folders, extract just the filename
-                # This handles Word HTML exports with references like "onlinesupport@brand.co.za_files/image001.png"
+                # Handle different image reference patterns
                 if '_files/' in src:
+                    # Word HTML export pattern: "onlinesupport@brand.co.za_files/image001.png"
                     img_filename = src.split('_files/')[-1]
-                    # The images are in the same folder as the HTML file
-                    absolute_url = f"{base_url}/{img_filename}"
-                    img['src'] = absolute_url
-                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated _files/ image: {original_src} -> {absolute_url}")
                 elif '/' in src:
-                    # For any other path with folders
+                    # General path pattern: "images/logo.jpg"  
                     img_filename = src.split('/')[-1]
-                    absolute_url = f"{base_url}/{img_filename}"
-                    img['src'] = absolute_url
-                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated path image: {original_src} -> {absolute_url}")
                 else:
-                    # For simple filename references
-                    absolute_url = f"{base_url}/{src}"
-                    img['src'] = absolute_url
-                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated simple image: {original_src} -> {absolute_url}")
+                    # Simple filename: "logo.jpg"
+                    img_filename = src
                 
-        # Find all VML image references (used in Outlook HTML)
+                if img_filename:
+                    # Create absolute URL
+                    absolute_url = f"{base_url}/{img_filename}"
+                    
+                    # Validate image exists in blob storage (optional - can be disabled for performance)
+                    if container_client:
+                        try:
+                            image_exists = await check_image_exists_in_blob(container_client, template_folder, img_filename)
+                            if not image_exists:
+                                print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: Image not found in blob storage: {img_filename}")
+                        except Exception as check_error:
+                            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Error checking image existence: {str(check_error)}")
+                    
+                    # Update the src attribute
+                    img['src'] = absolute_url
+                    processed_images.append({
+                        'original': original_src,
+                        'filename': img_filename,
+                        'absolute_url': absolute_url
+                    })
+                    
+                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated img src: {original_src} -> {absolute_url}")
+        
+        # Find and process VML imagedata tags (used in Outlook HTML)
         vml_images = soup.find_all('v:imagedata')
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(vml_images)} VML imagedata tags")
+        
         for vml_img in vml_images:
             if vml_img.get('src'):
-                src = vml_img['src']
-                original_src = src
+                original_src = vml_img['src']
                 
-                if not src.startswith('http'):
-                    src = src.replace('\\', '/')
+                if not original_src.startswith('http'):
+                    src = original_src.replace('\\', '/').strip()
+                    img_filename = None
+                    
                     if '_files/' in src:
                         img_filename = src.split('_files/')[-1]
+                    elif '/' in src:
+                        img_filename = src.split('/')[-1]
+                    else:
+                        img_filename = src
+                    
+                    if img_filename:
                         absolute_url = f"{base_url}/{img_filename}"
                         vml_img['src'] = absolute_url
-                        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated VML image: {original_src} -> {absolute_url}")
+                        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated VML imagedata src: {original_src} -> {absolute_url}")
         
-        # Find all background image references in inline styles
+        # Find and process background images in inline styles
         elements_with_style = soup.find_all(lambda tag: tag.has_attr('style') and 'background-image' in tag['style'])
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(elements_with_style)} elements with background-image styles")
         
         for elem in elements_with_style:
             style = elem['style']
             original_style = style
-            # Use regex to find and replace URL references
-            url_matches = re.findall(r'url\([\'"]?([^\'"]+)[\'"]?\)', style)
             
-            for url in url_matches:
+            # Use regex to find and replace URL references in CSS
+            def replace_bg_url(match):
+                url = match.group(1).strip('\'"')
+                
                 if url.startswith('http'):
-                    # Skip if already absolute URL
-                    continue
-                    
-                # Extract filename
+                    return match.group(0)  # Keep as is if already absolute
+                
+                # Process relative URL
+                img_filename = None
                 if '_files/' in url:
                     img_filename = url.split('_files/')[-1]
-                    absolute_url = f"{base_url}/{img_filename}"
-                    style = style.replace(f"url({url})", f"url({absolute_url})")
                 elif '/' in url:
                     img_filename = url.split('/')[-1]
-                    absolute_url = f"{base_url}/{img_filename}"
-                    style = style.replace(f"url({url})", f"url({absolute_url})")
                 else:
-                    absolute_url = f"{base_url}/{url}"
-                    style = style.replace(f"url({url})", f"url({absolute_url})")
+                    img_filename = url
+                
+                if img_filename:
+                    absolute_url = f"{base_url}/{img_filename}"
+                    return f"url('{absolute_url}')"
+                
+                return match.group(0)
             
-            if style != original_style:
-                elem['style'] = style
+            # Replace all url() references in the style
+            updated_style = re.sub(r'url\([\'"]?([^\'"]+?)[\'"]?\)', replace_bg_url, style)
+            
+            if updated_style != original_style:
+                elem['style'] = updated_style
                 print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated background image style")
         
-        # Convert back to string
-        return str(soup)
+        # Summary logging
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processed {len(processed_images)} images successfully")
+        
+        # Convert back to string and return
+        processed_html = str(soup)
+        
+        # Additional validation - check if we actually made changes
+        if processed_html == template_content:
+            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: No changes were made to template")
+        else:
+            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Template successfully updated with blob storage URLs")
+        
+        return processed_html
         
     except Exception as e:
         print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Error processing template images: {str(e)}")
+        import traceback
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Traceback: {traceback.format_exc()}")
         # Return original content if processing fails
         return template_content
 
@@ -286,10 +388,12 @@ async def process_template(template_content, template_folder, email_data):
         if not template_content:
             return template_content
         
-        # Process image references to use absolute URLs for blob storage
+        # Process image references to use absolute URLs for blob storage - THIS IS THE KEY STEP
         if template_folder:
+            print(f">> {timestamp} Script: autoresponse.py - Function: process_template - Starting image processing for folder: {template_folder}")
             processed_content = await process_template_images(template_content, template_folder)
         else:
+            print(f">> {timestamp} Script: autoresponse.py - Function: process_template - No template folder provided, skipping image processing")
             processed_content = template_content
         
         # Generate a reference ID (could be based on the email ID or a UUID)
@@ -304,8 +408,8 @@ async def process_template(template_content, template_folder, email_data):
         # Replace variables in the template - ONLY the reference ID placeholder
         processed_content = processed_content.replace('{{REFERENCE_ID}}', reference_id)
         
-        # REMOVED: Customer name replacement per user requirement
-        # The template should be taken as-is without name manipulation
+        # Log completion
+        print(f">> {timestamp} Script: autoresponse.py - Function: process_template - Template processing completed successfully")
         
         return processed_content
         
@@ -552,6 +656,7 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
         
         # If no template found, use a default template
         if not template_content:
+            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - No template found for {recipient_email}, using default template")
             template_content = """
             <!DOCTYPE html>
             <html>
@@ -575,10 +680,10 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
             </body>
             </html>
             """
-            template_folder = None
+            template_folder = None  # No folder for default template
         
         # Process the template to replace variables and update image references
-        # NO content manipulation - preserve original encoding
+        # THIS IS WHERE THE MAGIC HAPPENS - Image URLs get converted to blob storage URLs
         processed_template = await process_template(template_content, template_folder, email_data)
         
         # Create subject line for autoresponse using the new mapping
@@ -609,4 +714,6 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
             
     except Exception as e:
         print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Error sending autoresponse: {str(e)}")
+        import traceback
+        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Traceback: {traceback.format_exc()}")
         return False
