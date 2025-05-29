@@ -9,11 +9,66 @@ import base64
 from bs4 import BeautifulSoup
 from azure.storage.blob.aio import BlobServiceClient
 from email_processor.email_client import get_access_token
-from config import AZURE_STORAGE_CONNECTION_STRING, BLOB_CONTAINER_NAME, AZURE_STORAGE_PUBLIC_URL, EMAIL_TO_FOLDER_MAPPING, EMAIL_SUBJECT_MAPPING
+from config import (
+    AZURE_STORAGE_CONNECTION_STRING, 
+    BLOB_CONTAINER_NAME, 
+    AZURE_STORAGE_PUBLIC_URL, 
+    EMAIL_TO_FOLDER_MAPPING, 
+    EMAIL_SUBJECT_MAPPING,
+    EMAIL_ACCOUNTS  # Added import for loop prevention
+)
 
 # Default mapping from email address to blob store folder
 # If not defined in config.py, use the empty mapping
 DEFAULT_EMAIL_TO_FOLDER_MAPPING = {}
+
+def should_skip_autoresponse(recipient_email, sender_email):
+    """
+    Determine if autoresponse should be skipped to prevent infinite loops.
+    
+    Args:
+        recipient_email (str): Email address where the original email was sent to
+        sender_email (str): Email address of the original sender
+        
+    Returns:
+        tuple: (should_skip: bool, reason: str) - True if autoresponse should be skipped
+    """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Skip if sender email is empty or appears to be a system address
+    if not sender_email or any(system_domain in sender_email.lower() for system_domain in ['noreply', 'no-reply', 'donotreply', 'mailer-daemon']):
+        return True, f"System/no-reply sender address: {sender_email}"
+    
+    # Skip if no recipient email
+    if not recipient_email:
+        return True, "No recipient email found"
+    
+    # LOOP PREVENTION: Skip if email was sent TO any of the configured autoresponse accounts
+    # This prevents infinite loops when autoresponse systems communicate with each other
+    if EMAIL_ACCOUNTS:
+        for account in EMAIL_ACCOUNTS:
+            if account and recipient_email.lower().strip() == account.lower().strip():
+                return True, f"Email sent directly to autoresponse account: {recipient_email}"
+    
+    # Additional loop prevention: Check if sender is also in EMAIL_ACCOUNTS
+    # This handles cases where internal accounts might trigger autoresponses to each other
+    if EMAIL_ACCOUNTS:
+        for account in EMAIL_ACCOUNTS:
+            if account and sender_email.lower().strip() == account.lower().strip():
+                return True, f"Sender is also an autoresponse account: {sender_email}"
+    
+    # Check for autoresponse headers/subjects that indicate this might be an autoresponse loop
+    autoresponse_indicators = [
+        'auto-reply', 'auto reply', 'automatic reply', 'out of office', 
+        'vacation', 'away message', 'delivery status notification',
+        'undelivered mail returned to sender', 'mail delivery failed',
+        'thank you for contacting us', 'auto response'
+    ]
+    
+    # Note: We could check the subject line here, but that might be too restrictive
+    # since legitimate emails might contain these phrases
+    
+    return False, "Autoresponse allowed"
 
 async def get_template_from_blob(recipient_email):
     """
@@ -624,6 +679,7 @@ async def _send_email_fallback(access_token, account, to_email, subject, body_ht
 async def send_autoresponse(account, sender_email, email_subject, email_data):
     """
     Send an autoresponse email to the sender.
+    Enhanced with loop prevention to avoid infinite autoresponse cycles.
     
     Args:
         account (str): Email account to send from
@@ -637,19 +693,22 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     try:
-        # Skip autoresponse if sender email is empty or appears to be a system address
-        if not sender_email or any(system_domain in sender_email.lower() for system_domain in ['noreply', 'no-reply', 'donotreply', 'mailer-daemon']):
-            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Skipping autoresponse to system address: {sender_email}")
-            return False
+        # Get the recipient email (where the original email was sent to)
+        recipient_email = email_data.get('to', '').split(',')[0].strip()
+        
+        # LOOP PREVENTION: Check if we should skip sending autoresponse
+        should_skip, skip_reason = should_skip_autoresponse(recipient_email, sender_email)
+        if should_skip:
+            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - SKIPPING autoresponse: {skip_reason}")
+            return False  # Return False to indicate no autoresponse was sent (not an error)
+        
+        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Autoresponse allowed, proceeding...")
             
         # Get access token for Microsoft Graph API
         access_token = await get_access_token()
         if not access_token:
             print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Failed to obtain access token for autoresponse")
             return False
-        
-        # Get the recipient email (where the original email was sent to)
-        recipient_email = email_data.get('to', '').split(',')[0].strip()
         
         # Get template from Azure Blob Storage
         template_content, template_folder = await get_template_from_blob(recipient_email)
