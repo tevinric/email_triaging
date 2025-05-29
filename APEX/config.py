@@ -1,5 +1,7 @@
 import os
 
+ENV_TYPE = os.environ.get('ENV_TYPE')
+
 # PRIMARY AZURE OPENAI CONNECTION DETAILS
 AZURE_OPENAI_KEY=os.environ.get('AZURE_OPENAI_KEY')
 AZURE_OPENAI_ENDPOINT=os.environ.get('AZURE_OPENAI_ENDPOINT')
@@ -54,13 +56,50 @@ TRACKING_MAILS_MAPPING = get_email_prefix(TRACKING_MAILS)
 CLAIMS_MAILS_MAPPING = get_email_prefix(CLAIMS_MAILS)
 DIGITALCOMMS_MAILS_MAPPING = get_email_prefix(DIGITALCOMMS_MAILS)
 
-EMAIL_TO_FOLDER_MAPPING = {
-    ONLINESUPPORT_MAILS_MAPPING: "onlinesupport",
-    POLICY_SERVICES_MAPPING: "policyservice",
-    "tracking-aitest": "tracking",
-    DIGITALCOMMS_MAILS_MAPPING: "digitalcomms",
-    CLAIMS_MAILS_MAPPING: "claims",
-}
+# Set the mapping based on the deployment environment
+
+if ENV_TYPE == 'DEV':
+    EMAIL_TO_FOLDER_MAPPING = {
+        "onlinesupport-aitest": "onlinesupport",
+        "policyservice-aitest": "policyservice",
+        "tracking-aitest": "tracking",
+        "digital.comms-aitest": "digitalcomms",
+        "claims-aitest": "claims",
+    }
+elif ENV_TYPE == 'SIT':
+    EMAIL_TO_FOLDER_MAPPING = {
+        "onlinesupport-aisit": "onlinesupport",
+        "policyservice-aisit": "policyservice",
+        "tracking-aisit": "tracking",
+        "digital.comms-aisit": "digitalcomms",
+        "claims-aisit": "claims",
+    }
+elif ENV_TYPE == 'UAT':
+    EMAIL_TO_FOLDER_MAPPING = {
+        "onlinesupport-aiuat": "onlinesupport",
+        "policyservice-aiuat": "policyservice",
+        "tracking-aiuat": "tracking",
+        "digital.comms-aiuat": "digitalcomms",
+        "claims-aiuat": "claims",
+    }
+elif ENV_TYPE == 'PROD':
+    EMAIL_TO_FOLDER_MAPPING = {
+        "onlinesupport": "onlinesupport",
+        "policyservice": "policyservice",
+        "tracking": "tracking",
+        "digital.comms": "digitalcomms",
+        "claims": "claims",
+    }
+else:
+     EMAIL_TO_FOLDER_MAPPING = {
+        "onlinesupport": "onlinesupport",
+        "policyservice": "policyservice",
+        "tracking": "tracking",
+        "digital.comms": "digitalcomms",
+        "claims": "claims",
+    }   
+
+
 
 # Configure subject lines per template
 EMAIL_SUBJECT_MAPPING = {
@@ -71,3 +110,5 @@ EMAIL_SUBJECT_MAPPING = {
     "digitalcomms": "Auto Reply",
     "default": "Thank you for contacting us"
 }
+
+
