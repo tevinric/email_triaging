@@ -18,6 +18,14 @@ spec:
         - name: #{ApplicationName}#
           image: #{RegistryAddress}#/#{ImageName}#:#{Version}#
           env:
+
+          # SET THE APPLICATION ENVIRONMENT TYPE
+          - name: ENV_TYPE
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: ENV_TYPE
+
           # PRIMARY OPENAI CREDENTIALS
           - name: AZURE_OPENAI_KEY
             valueFrom:
@@ -56,12 +64,6 @@ spec:
               secretKeyRef:
                 name: apex-credentials
                 key: SQL_DATABASE
-
-          - name: SQL_USERNAME
-            valueFrom:
-              secretKeyRef:
-                name: apex-credentials
-                key: SQL_USERNAME
 
           - name: SQL_USERNAME
             valueFrom:
@@ -137,12 +139,6 @@ spec:
               secretKeyRef:
                 name: apex-credentials
                 key: DIGITALCOMMS_MAILS   
-
-          - name: CONNEX_TEST
-            valueFrom:
-              secretKeyRef:
-                name: apex-credentials
-                key: CONNEX_TEST  
 
           # AZURE BLOB STORAGE SETTINGS
           - name: AZURE_STORAGE_CONNECTION_STRING
