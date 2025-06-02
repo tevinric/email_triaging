@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-"""
-APEX Automated Testing Script
-
-This script performs daily automated testing of the APEX email triaging solution by:
-1. Sending test emails for each APEX category
-2. Waiting for the system to process them
-3. Verifying in the database that they were properly processed
-4. Generating and sending a report email with results
-
-Usage:
-    python apex_automated_test.py [--recipients EMAIL1,EMAIL2] [--wait-time MINUTES]
-
-Options:
-    --recipients     Comma-separated list of email addresses to send the report to
-    --wait-time      Wait time in minutes between sending test emails and checking DB (default: 3)
-"""
-
 import os
 import sys
 import time
@@ -52,9 +34,10 @@ DEFAULT_TEST_SENDER = "apex-test@example.com"
 
 # Set up argument parsing
 parser = argparse.ArgumentParser(description='APEX Automated Testing Script')
-parser.add_argument('--recipients', type=str, help='Comma-separated list of email addresses to send the report to')
-parser.add_argument('--wait-time', type=int, default=DEFAULT_WAIT_TIME, 
-                    help=f'Wait time in minutes between sending test emails and checking DB (default: {DEFAULT_WAIT_TIME})')
+parser.add_argument('--recipients', type=str, help='Comma-separated list of email addresses to send the report to (overrides env var)')
+parser.add_argument('--wait-time', type=int, help=f'Wait time in minutes between sending test emails and checking DB (default: {DEFAULT_WAIT_TIME})')
+parser.add_argument('--sender', type=str, help='Email address to use as sender for test emails (overrides env var)')
+parser.add_argument('--prefix', type=str, help='Prefix to use in test email subjects (overrides env var)')
 args = parser.parse_args()
 
 # Global variables to track test results
@@ -65,12 +48,12 @@ error_details = []
 class TestEmail:
     """Class to represent a test email and track its status"""
     
-    def __init__(self, category, test_id, subject, recipient, sender=DEFAULT_TEST_SENDER):
+    def __init__(self, category, test_id, subject, recipient, sender=None):
         self.category = category
         self.test_id = test_id
         self.subject = subject
         self.recipient = recipient
-        self.sender = sender
+        self.sender = sender or DEFAULT_TEST_SENDER
         self.message_id = None
         self.internet_message_id = None
         self.sent_time = None
@@ -170,7 +153,10 @@ async def create_test_email_content(category, test_id):
         dict: Email content dictionary
     """
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    subject = f"{TEST_ID_PREFIX} - {category} - {test_id}"
+    
+    # Use prefix from command line if provided, otherwise use environment variable
+    prefix = args.prefix if args.prefix else TEST_ID_PREFIX
+    subject = f"{prefix} - {category} - {test_id}"
     
     # Create category-specific content
     category_content = {
@@ -243,26 +229,60 @@ async def send_test_email(access_token, account, test_email, email_content):
         # Update recipient in email content
         email_content['to'] = test_email.recipient
         
-        # Use email_client.py's forward_email function to send the test email
-        # In this case, we're not really forwarding, but using the function to create a new email
-        result = await forward_email(
-            access_token=access_token,
-            user_id=account,
-            message_id='draft',  # This won't be used since we're creating a new message
-            original_sender=test_email.sender,
-            forward_to=test_email.recipient,
-            email_data=email_content,
-            forwardMsg=f"APEX AUTOMATED TEST - {test_email.category}"
-        )
+        # Create a proper message object for the Microsoft Graph API
+        message = {
+            "message": {
+                "subject": email_content['subject'],
+                "body": {
+                    "contentType": "HTML",
+                    "content": email_content['body_html']
+                },
+                "toRecipients": [
+                    {
+                        "emailAddress": {
+                            "address": test_email.recipient
+                        }
+                    }
+                ],
+                "from": {
+                    "emailAddress": {
+                        "address": test_email.sender
+                    }
+                },
+                "internetMessageId": f"<{email_content['internet_message_id']}>"
+            },
+            "saveToSentItems": "true"
+        }
         
-        if result:
-            test_email.sent_time = datetime.datetime.now()
-            print(f"Successfully sent test email for category: {test_email.category}")
-            return True
-        else:
-            test_email.error = "Failed to send email"
-            print(f"Failed to send test email for category: {test_email.category}")
-            return False
+        # Add CC recipients if any
+        if email_content.get('cc'):
+            cc_addresses = [address.strip() for address in email_content['cc'].split(',') if address.strip()]
+            if cc_addresses:
+                message["message"]["ccRecipients"] = [
+                    {"emailAddress": {"address": address}} for address in cc_addresses
+                ]
+        
+        # Send the email using Microsoft Graph API
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+        }
+        
+        # Use the sendMail endpoint instead of forward
+        endpoint = f'https://graph.microsoft.com/v1.0/users/{account}/sendMail'
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(endpoint, headers=headers, json=message) as response:
+                if response.status == 202:  # 202 Accepted is success for sendMail
+                    test_email.sent_time = datetime.datetime.now()
+                    print(f"Successfully sent test email for category: {test_email.category}")
+                    return True
+                else:
+                    error_text = await response.text()
+                    error_msg = f"Failed to send email: {response.status} - {error_text}"
+                    print(error_msg)
+                    test_email.error = error_msg
+                    return False
             
     except Exception as e:
         error_msg = f"Error sending test email: {str(e)}"
@@ -291,17 +311,23 @@ async def send_all_test_emails():
             
         account = EMAIL_ACCOUNTS[0]
         
+        # If sender is specified via command line, use it
+        test_sender = args.sender if args.sender else DEFAULT_TEST_SENDER
+        
+        # If prefix is specified via command line, use it
+        test_prefix = args.prefix if args.prefix else TEST_ID_PREFIX
+        
         # Create and send test emails for each category
         for category in EMAIL_CATEGORIES:
             # Generate unique test ID
-            test_id = f"{TEST_ID_PREFIX}_{uuid.uuid4()}"
+            test_id = f"{test_prefix}_{uuid.uuid4()}"
             
             # Determine recipient email (same as the APEX monitored mailbox)
             recipient = account
             
             # Create test email object
-            subject = f"{TEST_ID_PREFIX} - {category} - {test_id}"
-            test_email = TestEmail(category, test_id, subject, recipient)
+            subject = f"{test_prefix} - {category} - {test_id}"
+            test_email = TestEmail(category, test_id, subject, recipient, sender=test_sender)
             
             # Create email content
             email_content = await create_test_email_content(category, test_id)
@@ -627,49 +653,67 @@ async def send_report_email(report_recipients):
         Please see the attached CSV file for detailed results.
         """
         
-        # Create email message
-        email_content = {
-            'to': ', '.join(report_recipients),
-            'from': account,
-            'cc': '',
-            'subject': subject,
-            'body_html': html_with_chart,
-            'body_text': text_content,
-            'internet_message_id': f"APEX_TEST_REPORT_{timestamp}@apex.test",
-            'date_received': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'email_id': f"APEX_TEST_REPORT_{timestamp}",
-            'attachments': [
-                {
-                    'name': f'apex_test_report_{timestamp}.csv',
-                    'content_type': 'text/csv',
-                    'content': base64.b64encode(csv_report).decode('utf-8')
+        # Create message for Microsoft Graph API
+        message = {
+            "message": {
+                "subject": subject,
+                "body": {
+                    "contentType": "HTML",
+                    "content": html_with_chart
                 },
-                {
-                    'name': f'apex_test_results_{timestamp}.png',
-                    'content_type': 'image/png',
-                    'content': base64.b64encode(chart_data).decode('utf-8')
-                }
-            ]
+                "toRecipients": [
+                    {
+                        "emailAddress": {
+                            "address": recipient
+                        }
+                    } for recipient in report_recipients
+                ],
+                "from": {
+                    "emailAddress": {
+                        "address": account
+                    }
+                },
+                "internetMessageId": f"<APEX_TEST_REPORT_{timestamp}@apex.test>"
+            },
+            "saveToSentItems": "true"
         }
         
-        # Use email_client.py's forward_email function to send the report
-        # In this case, we're not really forwarding, but using the function to create a new email
-        result = await forward_email(
-            access_token=access_token,
-            user_id=account,
-            message_id='draft',  # This won't be used since we're creating a new message
-            original_sender=account,
-            forward_to=', '.join(report_recipients),
-            email_data=email_content,
-            forwardMsg="APEX AUTOMATED TEST REPORT"
-        )
+        # We can't directly attach files with the basic sendMail endpoint
+        # For simplicity, we'll embed the CSV data in the email body
         
-        if result:
-            print(f"Successfully sent test report to: {', '.join(report_recipients)}")
-            return True
-        else:
-            print(f"Failed to send test report")
-            return False
+        # Add a CSV download link
+        csv_base64 = base64.b64encode(csv_report).decode('utf-8')
+        html_with_chart = html_with_chart.replace('</body>', f'''
+            <h2>CSV Report</h2>
+            <p>
+              <a href="data:text/csv;base64,{csv_base64}" download="apex_test_report_{timestamp}.csv">
+                Download CSV Report
+              </a>
+            </p>
+            </body>
+        ''')
+        
+        # Update the message body with the modified HTML
+        message["message"]["body"]["content"] = html_with_chart
+        
+        # Send the email using Microsoft Graph API
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+        }
+        
+        endpoint = f'https://graph.microsoft.com/v1.0/users/{account}/sendMail'
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(endpoint, headers=headers, json=message) as response:
+                if response.status == 202:  # 202 Accepted is success for sendMail
+                    print(f"Successfully sent test report to: {', '.join(report_recipients)}")
+                    return True
+                else:
+                    error_text = await response.text()
+                    error_msg = f"Failed to send report: {response.status} - {error_text}"
+                    print(error_msg)
+                    return False
             
     except Exception as e:
         error_msg = f"Error sending test report: {str(e)}"
@@ -688,12 +732,27 @@ async def main():
     print(f"=== APEX Automated Test Started at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     
     try:
-        # Parse command line arguments
-        wait_time = args.wait_time or DEFAULT_WAIT_TIME
+        # Parse command line arguments (override environment variables)
+        wait_time = args.wait_time if args.wait_time is not None else DEFAULT_WAIT_TIME
         
         report_recipients = DEFAULT_REPORT_RECIPIENTS
         if args.recipients:
-            report_recipients = [email.strip() for email in args.recipients.split(',')]
+            report_recipients = [email.strip() for email in args.recipients.split(',') if email.strip()]
+        
+        # Log configuration
+        print(f"Test Configuration:")
+        print(f"- Wait time: {wait_time} minutes")
+        print(f"- Report recipients: {', '.join(report_recipients) if report_recipients else 'None configured'}")
+        print(f"- Test email sender: {DEFAULT_TEST_SENDER}")
+        print(f"- Test ID prefix: {TEST_ID_PREFIX}")
+        print(f"- Email categories to test: {len(EMAIL_CATEGORIES)}")
+        
+        # Validate configuration
+        if not report_recipients:
+            print("WARNING: No report recipients configured. Report will not be sent.")
+        
+        if not EMAIL_ACCOUNTS:
+            raise ValueError("No email accounts configured in EMAIL_ACCOUNTS")
         
         # Send test emails for all categories
         print("Sending test emails...")
@@ -708,8 +767,11 @@ async def main():
         await verify_all_emails_in_db()
         
         # Send the report
-        print("Sending test report...")
-        await send_report_email(report_recipients)
+        if report_recipients:
+            print(f"Sending test report to: {', '.join(report_recipients)}")
+            await send_report_email(report_recipients)
+        else:
+            print("Skipping report email - no recipients configured")
         
         print(f"=== APEX Automated Test Completed at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
         
@@ -734,8 +796,8 @@ async def main():
         try:
             if report_recipients:
                 await send_report_email(report_recipients)
-        except:
-            print("Failed to send error report")
+        except Exception as report_err:
+            print(f"Failed to send error report: {str(report_err)}")
 
 if __name__ == "__main__":
     # Run the main async function
