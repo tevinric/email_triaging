@@ -1,3 +1,132 @@
+async def verify_api_permissions(access_token):
+    """
+    Verify that the access token has the necessary permissions to send mail
+    
+    Args:
+        access_token: The access token to verify
+        
+    Returns:
+        bool: True if permissions are verified, False otherwise
+    """
+    try:
+        # Check the Microsoft Graph /me endpoint as a basic connectivity test
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+        }
+        
+        # Try accessing a basic endpoint to verify connectivity
+        endpoint = 'https://graph.microsoft.com/v1.0/me'
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(endpoint, headers=headers) as response:
+                if response.status == 200:
+                    print("Successfully connected to Microsoft Graph API")
+                    return True
+                elif response.status == 401:
+                    # This might indicate that we're using application permissions, not delegated
+                    # Try another endpoint that works with application permissions
+                    print("Authentication required for /me endpoint, trying users endpoint...")
+                    
+                    # Get the first user from the EMAIL_ACCOUNTS list
+                    if EMAIL_ACCOUNTS and EMAIL_ACCOUNTS[0]:
+                        user_email = EMAIL_ACCOUNTS[0]
+                        users_endpoint = f'https://graph.microsoft.com/v1.0/users/{user_email}'
+                        
+                        async with session.get(users_endpoint, headers=headers) as users_response:
+                            if users_response.status == 200:
+                                print(f"Successfully accessed user info for {user_email}")
+                                return True
+                            else:
+                                users_text = await users_response.text()
+                                print(f"Failed to access user info: {users_response.status} - {users_text}")
+                                
+                                # One more attempt - try to get users list
+                                users_list_endpoint = 'https://graph.microsoft.com/v1.0/users'
+                                
+                                async with session.get(users_list_endpoint, headers=headers) as users_list_response:
+                                    if users_list_response.status == 200:
+                                        print("Successfully accessed users list")
+                                        return True
+                                    else:
+                                        users_list_text = await users_list_response.text()
+                                        print(f"Failed to access users list: {users_list_response.status} - {users_list_text}")
+                                        return False
+                else:
+                    response_text = await response.text()
+                    print(f"Failed API permission check: {response.status} - {response_text}")
+                    return False
+                    
+    except Exception as e:
+        print(f"Error verifying API permissions: {str(e)}")
+        return Falseasync def get_access_token_with_mail_scope():
+    """
+    Obtain an access token from Microsoft Graph API with Mail.Send scope
+    
+    Returns:
+        str: Access token if successful, None otherwise
+    """
+    try:
+        # First try using the existing access token function
+        print("Attempting to get access token using the default method...")
+        access_token = await get_access_token()
+        
+        if access_token:
+            print("Successfully obtained access token with default method")
+            return access_token
+        
+        print("Default access token method failed, trying alternative method...")
+        
+        # If that fails, we might need to add explicit Mail.Send scope
+        # This requires app registration to have Mail.Send permissions
+        from msal import ConfidentialClientApplication
+        
+        app = ConfidentialClientApplication(
+            CLIENT_ID,
+            authority=AUTHORITY,
+            client_credential=CLIENT_SECRET,
+        )
+        
+        # Try with explicit Mail.Send scope
+        mail_scopes = ['https://graph.microsoft.com/.default', 'https://graph.microsoft.com/Mail.Send']
+        result = await asyncio.to_thread(app.acquire_token_for_client, scopes=mail_scopes)
+        
+        if 'access_token' in result:
+            print("Successfully obtained access token with Mail.Send scope")
+            return result['access_token']
+        else:
+            print(f"Failed to obtain access token with Mail.Send scope")
+            print(f"Error: {result.get('error', 'Unknown error')}")
+            print(f"Error description: {result.get('error_description', 'No description')}")
+            return None
+            
+    except Exception as e:
+        print(f"Error obtaining access token: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return None#!/usr/bin/env python3
+"""
+APEX Automated Testing Script
+
+This script performs daily automated testing of the APEX email triaging solution by:
+1. Sending test emails for each APEX category
+2. Waiting for the system to process them
+3. Verifying in the database that they were properly processed
+4. Generating and sending a report email with results
+
+Usage:
+    python apex_automated_test.py [--recipients EMAIL1,EMAIL2] [--wait-time MINUTES]
+
+Options:
+    --recipients     Comma-separated list of email addresses to send the report to (overrides env var)
+    --wait-time      Wait time in minutes between sending test emails and checking DB (overrides env var)
+
+Environment Variables:
+    APEX_TEST_REPORT_RECIPIENTS   Comma-separated list of email addresses to send reports to
+    APEX_TEST_WAIT_TIME           Wait time in minutes between sending emails and checking DB
+    APEX_TEST_SENDER              Email address to use as sender for test emails
+    APEX_TEST_PREFIX              Prefix to use in test email subjects
+"""
+
 import os
 import sys
 import time
@@ -225,9 +354,16 @@ async def send_test_email(access_token, account, test_email, email_content):
     """
     try:
         print(f"Sending test email for category: {test_email.category}")
+        print(f"  From: {test_email.sender}")
+        print(f"  To: {test_email.recipient}")
+        print(f"  Subject: {email_content['subject']}")
         
         # Update recipient in email content
         email_content['to'] = test_email.recipient
+        
+        # IMPORTANT: When sending from a mailbox, the from address must match the authenticated user
+        # Otherwise, the email might be rejected or caught in spam filters
+        sender_address = account  # Use the authenticated account as the sender
         
         # Create a proper message object for the Microsoft Graph API
         message = {
@@ -244,11 +380,15 @@ async def send_test_email(access_token, account, test_email, email_content):
                         }
                     }
                 ],
-                "from": {
-                    "emailAddress": {
-                        "address": test_email.sender
+                # We do not set the "from" field as it must match the authenticated user
+                # Setting a different "from" will either be ignored or cause errors
+                "replyTo": [
+                    {
+                        "emailAddress": {
+                            "address": test_email.sender
+                        }
                     }
-                },
+                ],
                 "internetMessageId": f"<{email_content['internet_message_id']}>"
             },
             "saveToSentItems": "true"
@@ -268,18 +408,27 @@ async def send_test_email(access_token, account, test_email, email_content):
             'Content-Type': 'application/json',
         }
         
-        # Use the sendMail endpoint instead of forward
+        # Use the sendMail endpoint
         endpoint = f'https://graph.microsoft.com/v1.0/users/{account}/sendMail'
+        
+        # Convert message to JSON for logging
+        message_json = json.dumps(message, indent=2)
+        print(f"Sending message to Graph API endpoint {endpoint}:\n{message_json}")
         
         async with aiohttp.ClientSession() as session:
             async with session.post(endpoint, headers=headers, json=message) as response:
-                if response.status == 202:  # 202 Accepted is success for sendMail
+                response_status = response.status
+                response_text = await response.text()
+                
+                print(f"Graph API response status: {response_status}")
+                print(f"Graph API response text: {response_text}")
+                
+                if response_status == 202:  # 202 Accepted is success for sendMail
                     test_email.sent_time = datetime.datetime.now()
                     print(f"Successfully sent test email for category: {test_email.category}")
                     return True
                 else:
-                    error_text = await response.text()
-                    error_msg = f"Failed to send email: {response.status} - {error_text}"
+                    error_msg = f"Failed to send email: {response_status} - {response_text}"
                     print(error_msg)
                     test_email.error = error_msg
                     return False
@@ -287,6 +436,7 @@ async def send_test_email(access_token, account, test_email, email_content):
     except Exception as e:
         error_msg = f"Error sending test email: {str(e)}"
         print(error_msg)
+        print(f"Traceback: {traceback.format_exc()}")
         test_email.error = error_msg
         return False
 
@@ -300,19 +450,27 @@ async def send_all_test_emails():
     global test_emails
     
     try:
-        # Get access token for MS Graph API
-        access_token = await get_access_token()
+        # Get access token for MS Graph API with Mail.Send scope
+        access_token = await get_access_token_with_mail_scope()
         if not access_token:
             raise Exception("Failed to obtain access token")
+        
+        # Check if token includes required permissions
+        print("Verifying API permissions...")
+        permissions_verified = await verify_api_permissions(access_token)
+        if not permissions_verified:
+            print("WARNING: Could not verify Mail.Send permission. Emails might not be delivered.")
         
         # Use the first configured email account
         if not EMAIL_ACCOUNTS or not EMAIL_ACCOUNTS[0]:
             raise Exception("No email account configured")
             
         account = EMAIL_ACCOUNTS[0]
+        print(f"Using email account: {account}")
         
         # If sender is specified via command line, use it
         test_sender = args.sender if args.sender else DEFAULT_TEST_SENDER
+        print(f"Test sender address: {test_sender}")
         
         # If prefix is specified via command line, use it
         test_prefix = args.prefix if args.prefix else TEST_ID_PREFIX
@@ -346,6 +504,7 @@ async def send_all_test_emails():
     except Exception as e:
         error_msg = f"Error in send_all_test_emails: {str(e)}"
         print(error_msg)
+        print(f"Traceback: {traceback.format_exc()}")
         error_details.append({
             "phase": "sending_emails",
             "error": error_msg,
@@ -593,8 +752,8 @@ async def send_report_email(report_recipients):
         bool: True if successful, False otherwise
     """
     try:
-        # Get access token for MS Graph API
-        access_token = await get_access_token()
+        # Get access token for MS Graph API with Mail.Send scope
+        access_token = await get_access_token_with_mail_scope()
         if not access_token:
             raise Exception("Failed to obtain access token")
         
@@ -603,6 +762,7 @@ async def send_report_email(report_recipients):
             raise Exception("No email account configured")
             
         account = EMAIL_ACCOUNTS[0]
+        print(f"Sending report email from: {account}")
         
         # Generate HTML report
         html_report = generate_html_report()
@@ -668,11 +828,14 @@ async def send_report_email(report_recipients):
                         }
                     } for recipient in report_recipients
                 ],
-                "from": {
-                    "emailAddress": {
-                        "address": account
+                # We do not set the "from" field as it must match the authenticated user
+                "replyTo": [
+                    {
+                        "emailAddress": {
+                            "address": account
+                        }
                     }
-                },
+                ],
                 "internetMessageId": f"<APEX_TEST_REPORT_{timestamp}@apex.test>"
             },
             "saveToSentItems": "true"
@@ -704,20 +867,30 @@ async def send_report_email(report_recipients):
         
         endpoint = f'https://graph.microsoft.com/v1.0/users/{account}/sendMail'
         
+        # Convert message to JSON for logging
+        message_json = json.dumps(message, indent=2)
+        print(f"Sending report to Graph API endpoint {endpoint}:\n{message_json}")
+        
         async with aiohttp.ClientSession() as session:
             async with session.post(endpoint, headers=headers, json=message) as response:
-                if response.status == 202:  # 202 Accepted is success for sendMail
+                response_status = response.status
+                response_text = await response.text()
+                
+                print(f"Graph API response status: {response_status}")
+                print(f"Graph API response text: {response_text}")
+                
+                if response_status == 202:  # 202 Accepted is success for sendMail
                     print(f"Successfully sent test report to: {', '.join(report_recipients)}")
                     return True
                 else:
-                    error_text = await response.text()
-                    error_msg = f"Failed to send report: {response.status} - {error_text}"
+                    error_msg = f"Failed to send report: {response_status} - {response_text}"
                     print(error_msg)
                     return False
             
     except Exception as e:
         error_msg = f"Error sending test report: {str(e)}"
         print(error_msg)
+        print(f"Traceback: {traceback.format_exc()}")
         error_details.append({
             "phase": "sending_report",
             "error": error_msg,
