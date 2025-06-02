@@ -90,16 +90,6 @@ elif ENV_TYPE == 'PROD':
         "digital.comms": "digitalcomms",
         "claims": "claims",
     }
-else:
-     EMAIL_TO_FOLDER_MAPPING = {
-        "onlinesupport": "onlinesupport",
-        "policyservice": "policyservice",
-        "tracking": "tracking",
-        "digital.comms": "digitalcomms",
-        "claims": "claims",
-    }   
-
-
 
 # Configure subject lines per template
 EMAIL_SUBJECT_MAPPING = {
