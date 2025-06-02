@@ -306,7 +306,6 @@ async def create_test_email_content(category, test_id):
         "online/app": "I'm having trouble accessing my account on the website. My policy number is TEST123456.",
         "retentions": "I would like to cancel my policy. My policy number is TEST123456.",
         "request for quote": "Please send me a quote for adding my new car to my insurance. My policy number is TEST123456.",
-        "debit order switch": "I need to change my debit order details. My policy number is TEST123456.",
         "previous insurance checks/queries": "Can you confirm my previous insurance details? My policy number is TEST123456.",
         "other": "This is a general query about my policy. My policy number is TEST123456."
     }
