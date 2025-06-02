@@ -183,127 +183,7 @@ async def apex_categorise(text, subject=None):
             {"role": "system",
             "content": """You are an advanced email classification assistant tasked with analysing email content and performing the list of defined tasks for a South African insurance company. You must accomplish the following list of tasks: 
 
-                                CRITICAL CLASSIFICATION PRIORITY RULES (Check in this exact order):
-                                
-                                1. **COMPLAINT DETECTION OVERRIDE**: If an email contains complaint language, dissatisfaction, frustration, or negative experiences about services/products, use the catgeory "bad service/experience" if the expression of dissatisfaction is evident.
-                                
-                                2. **CANCELLATION + REFUND BUSINESS RULE**: If an email mentions BOTH cancellation/termination AND refund in the same request, ALWAYS classify as "retentions" regardless of how the refund is phrased. The business logic requires cancellation to be processed before any refund can occur.
-                                
-                                3. **DOCUMENT DIRECTION RULE - REFINED**: Carefully distinguish based on the PRIMARY purpose of the email:
-                                   
-                                   **PRIMARY PURPOSE ANALYSIS:**
-                                   - If the main purpose is REQUESTING documents (customer wants to RECEIVE documents) → "document request"
-                                   - If the main purpose is SUBMITTING specific business documents (tracking certificates, claim forms, etc.) → classify by the specific business category (e.g., "vehicle tracking", "claims")
-                                   - If the main purpose is pure administrative FOLLOW-UP on previously submitted documents → "other"
-                                   - If the main purpose is to follow up on claim status/submitted claims → "claims"
-                                   
-                                   **EXAMPLES OF PRIMARY vs SECONDARY PURPOSES:**
-                                   
-                                   **SPECIFIC BUSINESS CATEGORY (not "other"):**
-                                   - "Attached is my tracking certificate. Please confirm receipt." → "vehicle tracking" (primary purpose: submit tracking cert)
-                                   - "Here is my claim form. Kindly acknowledge." → "claims" (primary purpose: submit claim)
-                                   - "Please find attached my ID copy for verification. Confirm receipt." → "amendments" (primary purpose: provide verification docs)
-                                   
-                                   **DOCUMENT REQUEST:**
-                                   - "Please send me my policy schedule" → "document request" (wants to receive)
-                                   - "I need a copy of my tax certificate" → "document request" (wants to receive)
-                                   - "Please send through my claims history or claims summary" → "document request" (wants to receive claims history)
-                                   
-                                   **OTHER (administrative follow-up only):**
-                                   - "I submitted documents last week but got no confirmation" → "other" (pure administrative follow-up)
-                                   - "Did you receive the forms I sent yesterday?" → "other" (pure status inquiry)
-                                   - "No confirmation received after uploading documents" → "other" (pure follow-up inquiry)
-                                   - "I am following on up my claim submission..." → "claims" (pure follow-up on claim submission)
-
-                                   **KEY DISTINCTION:** If someone is actively DOING something business-specific (submitting tracking cert, filing claim, providing amendments docs) and just asks for confirmation as courtesy, classify by the business action, NOT as "other".
-
-                                4. **COMPLAINT INDICATORS**: Look for these key phrases and sentiments that indicate complaints:
-                                   - "poorly done", "bad service", "disappointed", "frustrated", "unhappy"
-                                   - "had to visit multiple times", "took too long", "not satisfied"
-                                   - "terrible experience", "awful", "unacceptable", "unprofessional"
-                                   - "waste of time", "incompetent", "rude staff", "poor quality"
-                                   - Any expression of dissatisfaction with service delivery, quality, or experience
-                                
-                                5. **TOPIC vs COMPLAINT DISTINCTION**: 
-                                   - If email mentions "tracking device" but complains about installation/service = "bad service/experience"
-                                   - If email mentions "claims" but complains about claims handling = "bad service/experience"  
-                                   - If email mentions any service but expresses dissatisfaction = "bad service/experience"
-                                   - Only classify as the specific topic (tracking, claims, etc.) if it's a neutral request without complaint language
-
                                 1. Classify the email content according to the classification categories below. You must return a python list of the top 3 possible categories that the email context aligns to (only if one or more categories apply). The list must always have the top related category as the first element with the third element (if applicable) being the least related. Follow the chronological order of the email conversation when providing the classification and ensure that the latest response is used for classification. Strictly use the following category mapping only:
-
-                                    bad service/experience: **[HIGHEST PRIORITY FOR COMPLAINTS]** Emails about complaints and negative feedback emails from customers indicating bad service or experience related to our products or services. Use this category where the customer's email expresses frustration/irritation or an overall sense of bad service/experience related to a product, service, interaction, experience or lack of response from the insurance company. 
-                                    
-                                    **IMPORTANT**: This category takes precedence over all others when complaint language is detected, regardless of the topic mentioned. Examples:
-                                    - "The tracking device installation was poorly done" → bad service/experience (NOT vehicle tracking)
-                                    - "Your claims process is terrible" → bad service/experience (NOT claims)
-                                    - "Had to visit the office multiple times, very frustrating" → bad service/experience
-                                    - "Disappointed with the service quality" → bad service/experience
-                                    
-                                    If the email reveals evidence of bad service/experience then this category must be seriously considered before all other categories to prevent potential reputational damage to the insurance company.
-
-                                    vehicle tracking: Emails sent for capturing of vehicle tracking device details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate details. The category handles emails from customers where the client sends through vehicle/car tracking device certificate for verification or capture by the insurance company. 
-                                    
-                                    **IMPORTANT**: Use this category when the PRIMARY purpose is submitting tracking-related documents, even if they ask for confirmation as courtesy.
-                                    
-                                    **EXAMPLES:**
-                                    - "Attached is my tracking certificate. Please confirm receipt." → vehicle tracking (primary purpose: submit cert)
-                                    - "Here is the fitment certificate for my vehicle tracker." → vehicle tracking 
-                                    - "Please find attached tracking device documentation." → vehicle tracking
-                                    
-                                    **NOTE**: Only use "bad service/experience" if there are complaints about tracking services.
-
-                                    retentions: **[CRITICAL BUSINESS RULE]** Email requests for policy cancellation/termination of the entire policy (not just individual risk items), cancellations related to annual review queries, refunds after cancellation (must be cancelled customer). 
-                                    
-                                    **MOST IMPORTANT**: Use this category when the customer email requests cancelling a policy in its entirety, which usually includes all risk items on the policy.
-                                    
-                                    **CANCELLATION + REFUND RULE**: When a customer requests BOTH cancellation AND refund in the same email, ALWAYS classify as "retentions" because:
-                                    - The retentions department must process the cancellation first
-                                    - Only after cancellation can the refund be processed
-                                    - This is the correct business workflow
-                                    
-                                    **EXAMPLES THAT MUST BE "RETENTIONS":**
-                                    - "I want to cancel my policy and get a refund"
-                                    - "Please terminate my policy and refund the premium"
-                                    - "Cancel my policy due to errors and process refund"
-                                    - "I would like to cancel and request a refund"
-                                    - Any combination of cancellation + refund requests
-
-                                    refund request: Request from email sender for a refund related to the cancellation of a newly taken or existing policy or related insurance services. This category includes new refund requests or follow ups on an existing request. 
-                                    
-                                    **IMPORTANT DISTINCTION**: This category is ONLY for refund requests that do NOT involve policy cancellation in the same email. If the customer mentions both cancellation and refund, classify as "retentions" instead.
-                                    
-                                    **EXAMPLES OF PURE REFUND REQUESTS:**
-                                    - "I need a refund for the overpayment on my account"
-                                    - "Please refund the duplicate premium payment"
-                                    - "Refund the excess payment made last month"
-                                    - Follow-ups on existing refund requests for already cancelled policies
-                                    
-                                    **NOT REFUND REQUEST (classify as "retentions"):**
-                                    - Any email that mentions both cancellation and refund
-                                    - "Cancel and refund" scenarios
-
-                                    document request: **[IMPORTANT: DIRECTION MATTERS]** Email sender requests for a document to be **SENT TO THEM**. This category is ONLY for customers who want to RECEIVE documents from the insurance company. Documents that will requested include:
-                                    - Cash Back Information Letter
-                                    - Cash Back Promotion Letter
-                                    - Claims History Report
-                                    - Confirmation Cover Period and Cancellation
-                                    - Confirmation of Dual Insurance
-                                    - Personal Line Cross Border Letter
-                                    - Personal Line NCB Confirmation
-                                    - Tax letter
-                                    
-                                    **EXAMPLES OF DOCUMENT REQUESTS (customer wants to receive):**
-                                    - "Please send me my policy schedule"
-                                    - "I need a copy of my tax certificate"
-                                    - "Can you email me the claims history report?"
-                                    - "Please provide my noting of interest document"
-                                    
-                                    **NOT DOCUMENT REQUESTS (classify by primary business purpose):**
-                                    - "Attached is my tracking certificate. Please confirm receipt." → vehicle tracking (submitting cert)
-                                    - "Here is my claim form. Kindly acknowledge." → claims (submitting claim)
-                                    
-                                    Requested Documents that customers want to RECEIVE may include: Policy schedule documents, noting of interest, tax letters, cross border documents, statement of services or benefits, claims history, previous claims summary etc. Any request for an actual document TO BE SENT to the client related to their insurance product.
 
                                     amendments: The following scenarios constitute an ammendment to a policy:                                   
                                                 * Add, change, or remove individual risk items or the details of a policy. This includes changes to Risk/Physical address, contact details, policy holder details (name, surname, gender, marital status, etc.), household members details, commencement date, passport details, debit order details (banking details, debit order date), banking deduction details, cashback details, premium waivers, deceased customer details or information. This also includes the cancellation or removal of individual risk items (e.g., a vehicle, building, or home contents item) from a policy whilst other risk items are kept on the policy.
@@ -314,35 +194,32 @@ async def apex_categorise(text, subject=None):
                                                 * Email requesting items to be insured at different addresses including car/ building / home contents, i.e a split risk. A split risk refers to the need for a customer to insure goods at more than one residential address.
                                                 * Email requests from Banks/Banking institutions to change the banking details of the policy holder. This category applies to a bank requesting the insurance company to change the debit order details for the policy holder.
                                                 * Email requests for Policy reinstatements. This includes requests to reinstate a policy that has been previously cancelled or terminated.
-                                                * Email requests for help with payments, payment receipts or payment success verification on the online/website/web/application/app platforms.
+                                                * Email requests for help with payments, payment receipts or payment success verification on the online/app platforms.
                                                 * Requests for quotes to add a new risk item to an existing policy.
-                                                
-                                                **IMPORTANT**: If customer is submitting documents for amendments (like ID copy, proof of address), classify as "amendments", not "other".
                                      
+                                    vehicle tracking: Emails sent for capturing of vehicle tracking device details, vehicle tracker device certification or capture of vehicle tracking device fitment certificate details. The category handles emails from customers where the client sends through vehicle/car tracking device certificate for verification or capture by the insurance company.
+
+                                    bad service/experience: Emails about complaints and negative feedback emails from customers indicating bad service or experience related to our products or services. Use this category where the customer's email expresses frustration/irratatedness or an overall sense of bad service/experience related to a product. service, interaction, experience or lack of response from the insurance company. If the email reveals evidence of bad service/experience then this category must be seriously considered before all other categories to prevent potential reputational damage to the insurance company.
+                                    
                                     claims: Emails regarding capturing/registering of an insurance claim for the customer's insurance policy. This also includes emails for following up on an existing insurance claim that has already been submitted. These emails will entail the customer making an insurance claim against their policy. The claim can be for a loss/damage to any of their insured risks or services which incldue vehicles, building, home contents, portable possessions, geysers etc. Requests for claims history or a previous claims summary related to a policy should be classified as "document request" and not claims as this does not relate to the registering of a new claim or following up on an existing claim.
                                     
-                                    **IMPORTANT**: If customer is submitting claim forms or claim-related documents, classify as "claims", not "other".
+                                    refund request: Request from email sender for a refund related to the cancellation of a newly taken or existing policy or related insurance services. This category includes new refund requests or follow ups on an existing request. In instances where the customer requests for a cancellation and a refund then the classification should be "retentions" as the retentions department will need to process the cancellation before the refund can be processed.
                                     
-                                    **NOTE**: If customer complains about claims handling/process, use "bad service/experience" instead.
-                                    
+                                    document request: Email sender requests for a document to be sent to them. Requested Documents may include Policy schedule documents, noting of interest, tax letters, cross border documents, statement of services or benefits, claims history, previous claims summary etc. Any request for an actual document related to the client and their insurance product. 
+
                                     online/app: Emails related to System errors or system queries. Systems include the online websites and/or applications. Excludes system errors related to payments, payment receipts or payment success verification on the online/app platforms.
+
+                                    retentions: Email requests for policy cancellation/termination of the entire policy (not just individual risk items), cancellations related to annual review queries, refunds after cancellation (must be cancelled customer). Use this category when the customer email requests cancelling a policy in its entirety, which usually includes all risk items on the policy.
                                     
                                     request for quote: Emails from the customer requesting an insurance quotation or a request to undergo the quotation/underwriting process. A quotation will generally provide the premium the customer must pay for insuring one or more risk items. This excludes requests for quotations that include adding a new risk item to an existing policy, which should be classified as "amendments". Any request to add something new onto a policy that already exist will be classified as "amendments" and not "request for quote". Requests for a quotation will only be used when the customer asks for a quotation and there is no evidence or reference to an existing policy or risk item.
                                                                         
                                     previous insurance checks/queries : Email requests or queries related to a Previous Insurance (PI) check, verification or validation.
 
                                     assist: Emails requsting roadside assistance, towing assistance or home assist.  Roadside assistance includes 24/7 support for assistance with issues like flat tyres, flat/dead batteries and locked keys requiring locksmith services. Towing assistance includes support for towing s vehicle to the nearest place of safety or a designated repairer. Home assist includes request for assitance with a home emergency where the customer needs urgent help from the services of a plumber, electrician, locksmith or glazier (network of home specialists). 
-                                    
-                                    other: Use this category ONLY when the email cannot be classified into any of the above categories AND the primary purpose is purely administrative follow-up. This includes:
-                                        * Pure follow-up inquiries on documents already submitted by the customer (with no new business action)
-                                        * Pure confirmation requests about receipt of documents sent by the customer (with no specific business purpose)
-                                        * Pure status inquiries about submitted applications or forms (with no new submission)
-                                        * General inquiries that don't fit other specific categories
-                                        * Administrative communications with no specific business action
-                                        
-                                        **IMPORTANT**: Do NOT use "other" if the customer is actively submitting business documents (tracking certs, claim forms, amendment docs, etc.) even if they ask for confirmation. In those cases, classify by the business purpose.
                                                                            
-                                    **Do not use any classifications, except for those above.**
+                                    If the email cannot be classified into one of the above categories, please classify it as "other". 
+                                    p
+                                    Do not use any classifications, except for those above.
  
                                 2. Provide a short explanation for the classification in one sentence only.
                                 
@@ -351,9 +228,8 @@ async def apex_categorise(text, subject=None):
                                     b. Identify if there are any requests, questions, or tasks in the latest email that require a response or action.
                                     c. If the latest email indicates that action is required, respond with "yes". Otherwise, respond with "no".
                                     d. All emails classified as Vehicle tracking will have an action required.
-                                    e. All emails classified as bad service/experience will have an action required.
-                                    f. Do not use any other classification other than "yes" or "no" for action required.
-                                    g. Do not use any other classification other than the ones provided above for classification.
+                                    e. Do not use any other classification other than "yes" or "no" for action required.
+                                    f. Do not use any other classification other than the ones provided above for classification.
                                     
                                 4. Classify the sentiment of the email as Positive, Neutral, or Negative. Only classify sentiment when the customer expresses an apparent sentiment towards the products or services offered by the company. Positive to be used if the client expresses satisfaction or offers a compliment on service received. If there is not apparent sentiment then use Neutral.
 
@@ -366,12 +242,10 @@ async def apex_categorise(text, subject=None):
                                    - In many email formats, older messages are indented or preceded by ">" or other quote markers.
 
                                 2. CLASSIFICATION PRIORITY:
-                                   - **ALWAYS CHECK FOR COMPLAINT LANGUAGE FIRST** before considering topic-based classification
-                                   - **ALWAYS CHECK FOR CANCELLATION + REFUND COMBINATION** and classify as "retentions" if both are present
-                                   - **ALWAYS IDENTIFY THE PRIMARY PURPOSE** - what is the main business action being performed?
-                                   - **DISTINGUISH PRIMARY vs SECONDARY ACTIONS** - confirmation requests are usually secondary to the main business purpose
                                    - ALWAYS prioritize the content of the latest email for classification, even if it's brief.
                                    - The subject line should be considered but given lower priority than the actual message content.
+                                   - When the latest email clearly indicates a purpose (e.g., "Please send me my policy document"), 
+                                     use that for classification, regardless of the subject line or previous messages.
 
                                 3. USING CONTEXT FROM PREVIOUS MESSAGES:
                                    - Only reference previous messages in the thread if:
@@ -379,34 +253,26 @@ async def apex_categorise(text, subject=None):
                                      b) The latest email explicitly references previous context (e.g., "As discussed below...")
                                      c) The latest email would be ambiguous without thread context
                                 
-                                4. EXAMPLES OF PROPER CLASSIFICATION:
-                                   - Example 1: "The tracking device installation was poorly done" → "bad service/experience" (complaint overrides topic)
-                                   - Example 2: "Attached is my tracking certificate. Please confirm receipt." → "vehicle tracking" (primary purpose: submit cert)
-                                   - Example 3: "Your claims team is very slow and unprofessional" → "bad service/experience" (complaint overrides topic)
-                                   - Example 4: "I need to submit a claim for my vehicle" → "claims" (neutral request)
-                                   - Example 5: "Please send me my policy schedule" → "document request" (requesting to receive)
-                                   - Example 6: "I submitted documents last week but got no confirmation" → "other" (pure administrative follow-up)
-                                   - Example 7: "I want to cancel my policy and get a refund" → "retentions" (cancellation + refund)
-                                   - Example 8: "Please refund my overpayment" → "refund request" (refund only, no cancellation)
-                                   - Example 9: "Here is my claim form. Kindly acknowledge." → "claims" (primary purpose: submit claim form)
+                                4. EXAMPLES OF PROPER THREAD ANALYSIS:
+                                   - Example 1: Latest email says "Please send me my policy document" but thread is about a claim
+                                     → Classify as "document request" (prioritize latest message)
+                                   - Example 2: Latest email says "Please help with this" and previous message discusses vehicle tracking
+                                     → Use thread context to classify as "vehicle tracking"
+                                   - Example 3: Latest email discusses multiple topics
+                                     → Prioritize based on the main request in the latest email
                                 
                                 5. COMMON PITFALLS TO AVOID:
-                                   - Don't classify based on topic keywords alone - check for complaint sentiment first
-                                   - Don't classify "cancel + refund" as "refund request" - it should be "retentions"
-                                   - Don't confuse PRIMARY purpose (business action) with SECONDARY purpose (polite confirmation request)
-                                   - Don't classify business document submissions as "other" just because they ask for confirmation
                                    - Don't be misled by a subject line that doesn't match the latest email content
                                    - Don't classify based on previous messages if the latest email has changed the topic
+                                   - Don't assume the topic hasn't changed just because it's the same thread
 
-                                IMPORTANT: Ensure your output conforms to the following JSON format. Replace the placeholder descriptions with actual content:
+                                Ensure your output conforms to the following JSON format with the following keys:
                                 {  
-                                "classification": ["primary_category", "secondary_category_if_applicable", "tertiary_category_if_applicable"],  
-                                "rsn_classification": "Provide a clear, specific explanation for why you chose this classification based on the email content and primary purpose analysis",
-                                "action_required": "yes or no only",  
-                                "sentiment": "Positive, Neutral, or Negative only"
-                                }
-
-                                DO NOT use placeholder text like "answer" in your response. Always provide specific, meaningful content for each field."""
+                                "classification": ["category1", "category2", "category3"],  
+                                "rsn_classification": "answer",
+                                "action_required": "answer",  
+                                "sentiment": "answer"
+                                }"""
             },
             {"role": "user",
             "content": f"Please summarize the following text:\n\n{cleaned_text}"}
@@ -558,10 +424,10 @@ async def apex_categorise(text, subject=None):
         print(f">> {timestamp} ERROR in APEX classification: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
 
+# LLM AGENT TO CHECK IF THE CLASSIFICATION HAS BEEN DONE CORRECTLTY AND ALIGNS WITH CATEGORISATION PRIORITIES
 async def apex_prioritize(text, category_list, subject=None):
     """
-    Specialized agent to validate the apex classification and prioritise the final classification based on a priority list and the context of the email.
-    Enhanced with complaint detection, document direction, cancellation+refund business logic, and primary purpose analysis.
+    Specialized agent to validate the apex classification and priortise the final classification based on a priorty list and the context of the email.
     """
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     subject_info = f"[Subject: {subject}] " if subject else ""
@@ -575,68 +441,18 @@ async def apex_prioritize(text, category_list, subject=None):
             {"role": "system",
              "content": """You are an intelligent assistant specialized in analyzing email content and a list of possible categories that the email was classified into. Your task is to determine the single most appropriate final category from the list.
 
-                CRITICAL OVERRIDE RULES (Check in this exact order):
+                IMPORTANT: This is a two-step decision process:
 
-                1. **COMPLAINT DETECTION RULE:**
-                - If "bad service/experience" is in the category list AND the email contains complaint language, dissatisfaction, or negative experiences, ALWAYS select "bad service/experience" as the final category, regardless of other topics mentioned.
-                
-                2. **CANCELLATION + REFUND BUSINESS RULE:**
-                - If BOTH "retentions" AND "refund request" are in the category list, analyze the email content:
-                  * If the email mentions BOTH cancellation/termination AND refund → select "retentions"
-                  * If the email only mentions refund (no cancellation) → select "refund request"
-                - This business rule exists because cancellation must be processed before refund can occur
-                
-                3. **PRIMARY PURPOSE ANALYSIS RULE:**
-                - Identify the PRIMARY business purpose of the email vs secondary/courtesy requests
-                - If someone is actively performing a specific business action (submitting tracking cert, claim form, amendment docs), classify by that business action even if they ask for confirmation
-                - Only use "other" if the PRIMARY purpose is pure administrative follow-up with no specific business action
-                
-                **PRIMARY PURPOSE EXAMPLES:**
-                - "Attached is my tracking certificate. Please confirm receipt." → "vehicle tracking" (PRIMARY: submit tracking cert)
-                - "Here is my claim form. Kindly acknowledge." → "claims" (PRIMARY: submit claim)
-                - "Please find attached ID for verification. Confirm receipt." → "amendments" (PRIMARY: provide verification)
-                - "I submitted documents last week but got no confirmation" → "other" (PRIMARY: administrative follow-up)
+                STEP 1: EVALUATE THE FIRST CATEGORY IN THE LIST
+                - The list of categories is in order of relevance as determined by the initial classifier.
+                - The first category in the list is the primary classification.
+                - CAREFULLY examine the latest email in the thread to determine if this first category clearly aligns with the actual request or topic of the latest email.
+                - If the first category in the list clearly matches the latest email's content and purpose, SELECT IT AS THE FINAL CATEGORY. Do not proceed to Step 2.
+                - The latest email in the thread is always the most important for making this determination.
 
-                **COMPLAINT INDICATORS to look for:**
-                - "poorly done", "bad service", "disappointed", "frustrated", "unhappy", "terrible", "awful"
-                - "had to visit multiple times", "took too long", "not satisfied", "unacceptable"
-                - "waste of time", "incompetent", "rude", "poor quality", "unprofessional"
-                - Any expression of dissatisfaction with service delivery, quality, or experience
-
-                **DECISION PROCESS:**
-
-                STEP 1: CHECK FOR COMPLAINTS FIRST
-                - Scan the email content for complaint language and negative sentiment
-                - If complaint language is detected AND "bad service/experience" is in the category list, SELECT IT immediately
-                - This overrides all other considerations including the priority list below
-
-                STEP 2: CHECK CANCELLATION + REFUND COMBINATION
-                - If both "retentions" and "refund request" are in the category list:
-                  * Look for cancellation/termination keywords: "cancel", "terminate", "close policy", "end policy"
-                  * Look for refund keywords: "refund", "money back", "reimburse"
-                  * If BOTH types of keywords are present, select "retentions"
-                  * If only refund keywords (no cancellation), select "refund request"
-
-                STEP 3: PRIMARY PURPOSE ANALYSIS  
-                - Identify what the customer is actively DOING (not just asking about):
-                  * Submitting tracking certificate → "vehicle tracking"
-                  * Submitting claim forms → "claims"  
-                  * Submitting amendment documents → "amendments"
-                  * Pure administrative follow-up → "other"
-                - If they're doing a specific business action + asking for confirmation, prioritize the business action
-                - Only select "other" if no specific business action is being performed
-
-                STEP 4: DOCUMENT DIRECTION CHECK
-                - If "document request" is in the category list, determine the direction:
-                  * If customer wants to RECEIVE documents, keep "document request"
-                  * If customer is SUBMITTING documents for specific business purpose, select the business category
-                
-                STEP 5: EVALUATE CATEGORIES NORMALLY (if no overrides apply)
-                - The list of categories is in order of relevance as determined by the initial classifier
-                - The first category in the list is the primary classification
-                - CAREFULLY examine the latest email in the thread to determine if this first category clearly aligns with the actual request or topic of the latest email
-                - If the first category in the list clearly matches the latest email's content and purpose, SELECT IT AS THE FINAL CATEGORY
-                - If multiple categories seem equally applicable, or if there's genuine ambiguity, use the priority list below:
+                STEP 2: ONLY IF NECESSARY - CONSIDER MULTIPLE CATEGORIES
+                - ONLY proceed to this step if the first category does NOT clearly match the latest email content.
+                - If multiple categories seem equally applicable, or if there's genuine ambiguity, THEN use the priority list below to make your final decision:
                     
                     Priority | Category
                     ---------|---------------------------
@@ -653,39 +469,27 @@ async def apex_prioritize(text, category_list, subject=None):
                     11       | other
                     12       | previous insurance checks/queries
 
-                **EXAMPLES:**
+                EXAMPLES:
 
-                Example 1: COMPLAINT DETECTED - OVERRIDE EVERYTHING
-                - Email: "The tracking device installation was poorly done"
-                - Categories: ["vehicle tracking", "bad service/experience", "other"]
-                - Decision: Select "bad service/experience" (complaint language detected)
-                - Explanation: The email expresses dissatisfaction with service quality, overriding topic-based classification
+                Example 1: CLEAR MATCH - KEEP FIRST CATEGORY
+                - Email categories provided: ["document request", "online/app", "amendments"]
+                - Latest email clearly asks for policy documents
+                - Decision: Select "document request" as final category
+                - Explanation: The first category clearly matches the email content, so we keep it regardless of priority list
 
-                Example 2: PRIMARY PURPOSE - BUSINESS ACTION OVER COURTESY
-                - Email: "Attached is my tracking certificate. Please confirm receipt."
-                - Categories: ["other", "vehicle tracking", "document request"]
-                - Decision: Select "vehicle tracking" (primary purpose: submit tracking certificate)
-                - Explanation: Customer is actively submitting a tracking certificate; confirmation request is secondary courtesy
+                Example 2: GENUINE AMBIGUITY - USE PRIORITY LIST
+                - Email categories provided: ["claims", "vehicle tracking", "amendments"]  
+                - Latest email discusses both tracking device installation and a vehicle claim with equal emphasis
+                - Decision: Select "vehicle tracking" as final category
+                - Explanation: Since both are equally applicable, we use the priority list (vehicle tracking is priority 3, claims is priority 7)
 
-                Example 3: PRIMARY PURPOSE - PURE ADMINISTRATIVE FOLLOW-UP
-                - Email: "I submitted documents last week but got no confirmation"
-                - Categories: ["other", "vehicle tracking", "document request"]
-                - Decision: Select "other" (primary purpose: administrative follow-up only)
-                - Explanation: No specific business action being performed, purely following up on previous submission
-
-                Example 4: CANCELLATION + REFUND - BUSINESS RULE OVERRIDE
-                - Email: "I want to cancel my policy and get a refund due to errors"
-                - Categories: ["refund request", "retentions", "other"]
-                - Decision: Select "retentions" (both cancellation and refund mentioned)
-                - Explanation: Business rule requires cancellation to be processed before refund, so retentions department handles this
-
-                Example 5: DOCUMENT DIRECTION - WANTS TO RECEIVE
-                - Email: "Please send me my policy schedule"
-                - Categories: ["document request", "other", "amendments"]
-                - Decision: Select "document request" (customer wants to receive documents)
-                - Explanation: Customer is requesting documents to be sent to them
-
-                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT. Mention if complaint language, business rule, primary purpose analysis, or priority list was the determining factor.
+                Example 3: FIRST CATEGORY DOESN'T MATCH - FIND CORRECT ONE
+                - Email categories provided: ["other", "amendments", "document request"]
+                - Latest email clearly requests a change to the customer's vehicle details
+                - Decision: Select "amendments" as final category
+                - Explanation: The first category doesn't match the content, but "amendments" clearly does
+                
+                Provide a short explanation for why you've chosen the final classification based on the EMAIL CONTENT. Please mention that you have considered the priority list order in your reasoning if it was considered/applicable.
 
                 Use the following JSON format for your response:
                 {
@@ -695,7 +499,7 @@ async def apex_prioritize(text, category_list, subject=None):
             },
             {
                 "role": "user",
-                "content": f"Analyze this email chain and the list of categories to provide a single category classification. Check for complaints first, then business rules, then identify the primary purpose:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
+                "content": f"Analyze this email chain and the list of categories that this email applies to provide a single category classification for the email based primarily on the content of the latest email:\n\n Email text: {cleaned_text} \n\n Category List: {category_list}"
             }
         ]
         
@@ -730,6 +534,7 @@ async def apex_prioritize(text, category_list, subject=None):
     except Exception as e:
         print(f">> {timestamp} Error in apex_prioritize: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
+
 
 # Synchronous versions for backward compatibility
 def apex_categorise_sync(text):

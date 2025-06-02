@@ -18,7 +18,15 @@ spec:
         - name: #{ApplicationName}#
           image: #{RegistryAddress}#/#{ImageName}#:#{Version}#
           env:
-          #OPENAI CREDENTIALS
+
+          # SET THE APPLICATION ENVIRONMENT TYPE
+          - name: ENV_TYPE
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: ENV_TYPE
+
+          # PRIMARY OPENAI CREDENTIALS
           - name: AZURE_OPENAI_KEY
             valueFrom:
               secretKeyRef:
@@ -30,6 +38,19 @@ spec:
               secretKeyRef:
                 name: apex-credentials
                 key: AZURE_OPENAI_ENDPOINT
+
+          # BACKUP OPENAI CREDENTIALS
+          - name: AZURE_OPENAI_BACKUP_KEY
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_OPENAI_BACKUP_KEY
+
+          - name: AZURE_OPENAI_BACKUP_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_OPENAI_BACKUP_ENDPOINT
           
           #SQL CREDENTIALS
           - name: SQL_SERVER
@@ -43,12 +64,6 @@ spec:
               secretKeyRef:
                 name: apex-credentials
                 key: SQL_DATABASE
-
-          - name: SQL_USERNAME
-            valueFrom:
-              secretKeyRef:
-                name: apex-credentials
-                key: SQL_USERNAME
 
           - name: SQL_USERNAME
             valueFrom:
@@ -125,11 +140,24 @@ spec:
                 name: apex-credentials
                 key: DIGITALCOMMS_MAILS   
 
-          - name: CONNEX_TEST
+          # AZURE BLOB STORAGE SETTINGS
+          - name: AZURE_STORAGE_CONNECTION_STRING
             valueFrom:
               secretKeyRef:
                 name: apex-credentials
-                key: CONNEX_TEST  
+                key: AZURE_STORAGE_CONNECTION_STRING
+          
+          - name: BLOB_CONTAINER_NAME
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: BLOB_CONTAINER_NAME
+          
+          - name: AZURE_STORAGE_PUBLIC_URL
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: AZURE_STORAGE_PUBLIC_URL
 
           securityContext:
             allowPrivilegeEscalation: false

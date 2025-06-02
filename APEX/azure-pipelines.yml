@@ -33,6 +33,8 @@ variables:
     value: Kubernetes_OnPrem_UAT
   - name: K8s-ServiceConnection-Prod
     value: Kubernetes_OnPrem_Prod
+  # - name: sonarQubeEndpoint
+  #   value: '${{variables.sonarQubeEndpoint}}'  
 
 pool: 'TIH Hosted'
 
@@ -41,8 +43,6 @@ stages:
     parameters:
       ImageName: '${{variables.projectImage}}'
       ApplicationName: '${{variables.applicationName}}'
-      RunLintChecks : false
-      RunUnitTests : false
       AgentPool: $(DeployPool)
       Namespace: '${{variables.projectNamespace}}'
       K8sServiceConnectionDEV : $(K8s-ServiceConnection-Dev)
@@ -51,9 +51,9 @@ stages:
       K8sServiceConnectionPROD : $(K8s-ServiceConnection-Prod)
       #K8sManifestDir: '${{variables.K8sManifestDir}}'
       #ACR_Service_Principal: '$(ACR_Service_Principal)'
-      #sonarQubeEndpoint : '${{variables.sonarQubeEndpoint}}'
+      #sonarQubeEndpoint: '${{variables.sonarQubeEndpoint}}'
       #SonarQubeContinueOnError : '${{variables.SonarQubeContinueOnError}}'
-      #projectName : '${{variables.projectNamespace}}'
-      #projectKey: '${{variables.sonarQubeProjectKey}}'
+      projectName : '${{variables.projectNamespace}}'
+      projectKey: '${{variables.sonarQubeProjectKey}}'
       #KongEnabled : '${{variables.KongEnabled}}'
       #NugetAuth: ${{variables.NugetAuth}}

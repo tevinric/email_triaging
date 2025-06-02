@@ -3,9 +3,10 @@ variables:
     teamName: coe
     projectNamespace: coe-projects
     #K8sManifestDir: 
-    SonarQubeApplication:
-    SonarQubeContinueOnError:
-    #projectKey:
+    # SonarQubeApplication:
+    # SonarQubeContinueOnError:
+    sonarQubeEndpoint: https://sonarqube.tihsa.co.za/
+    projectKey: AI_CoE_APEX_931e83f2-085c-491d-81ca-f261b8d005da
     #serviceLanguage:
     #RunUnitTests:
     #RunLintChecks:
