@@ -1,26 +1,3 @@
-#!/usr/bin/env python3
-"""
-APEX Automated Testing Script
-
-This script performs daily automated testing of the APEX email triaging solution by:
-1. Sending test emails for each APEX category
-2. Waiting for the system to process them
-3. Verifying in the database that they were properly processed
-4. Generating and sending a report email with results
-
-Usage:
-    python apex_automated_test.py [--recipients EMAIL1,EMAIL2] [--wait-time MINUTES]
-
-Options:
-    --recipients     Comma-separated list of email addresses to send the report to (overrides env var)
-    --wait-time      Wait time in minutes between sending test emails and checking DB (overrides env var)
-
-Environment Variables:
-    APEX_TEST_REPORT_RECIPIENTS   Comma-separated list of email addresses to send reports to
-    APEX_TEST_WAIT_TIME           Wait time in minutes between sending emails and checking DB
-    APEX_TEST_SENDER              Email address to use as sender for test emails
-    APEX_TEST_PREFIX              Prefix to use in test email subjects
-"""
 
 import os
 import sys
@@ -57,11 +34,11 @@ def get_env_var(var_name, default=None, required=False):
     return value
 
 # Constants from environment variables
-TEST_ID_PREFIX = get_env_var("APEX_TEST_PREFIX", "APEX_AUTOMATED_TEST")
-DEFAULT_WAIT_TIME = int(get_env_var("APEX_TEST_WAIT_TIME", "3"))
-DEFAULT_REPORT_RECIPIENTS = get_env_var("APEX_TEST_REPORT_RECIPIENTS", "").split(",") if get_env_var("APEX_TEST_REPORT_RECIPIENTS") else []
-DEFAULT_TEST_SENDER = get_env_var("APEX_TEST_SENDER", EMAIL_ACCOUNTS[0] if EMAIL_ACCOUNTS else "apex-test@example.com")
+TEST_ID_PREFIX = "APEX_AUTOMATED_TEST"
+DEFAULT_WAIT_TIME = 3  # minutes
+DEFAULT_REPORT_RECIPIENTS = ["tevinri@tihsa.co.za"]
 EMAIL_CATEGORIES = list(ang_routings.keys())
+DEFAULT_TEST_SENDER = "angaibizhubsit@tihsa.co.za"
 
 # Set up argument parsing
 parser = argparse.ArgumentParser(description='APEX Automated Testing Script')

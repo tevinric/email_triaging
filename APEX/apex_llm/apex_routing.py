@@ -20,6 +20,5 @@ ang_routings = {
     "request for quote"         :   POLICY_SERVICES,
     "debit order switch"        :   ONLINESUPPORT_MAILS,
     "previous insurance checks/queries" : INSURANCEADMIN_MAILS,
-    "connex test"               :   CONNEX_TEST,
     "other"                     :   POLICY_SERVICES,
 }
