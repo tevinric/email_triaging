@@ -1,3 +1,27 @@
+#!/usr/bin/env python3
+"""
+APEX Automated Testing Script
+
+This script performs daily automated testing of the APEX email triaging solution by:
+1. Sending test emails for each APEX category
+2. Waiting for the system to process them
+3. Verifying in the database that they were properly processed
+4. Generating and sending a report email with results
+
+Usage:
+    python apex_automated_test.py [--recipients EMAIL1,EMAIL2] [--wait-time MINUTES]
+
+Options:
+    --recipients     Comma-separated list of email addresses to send the report to (overrides env var)
+    --wait-time      Wait time in minutes between sending test emails and checking DB (overrides env var)
+
+Environment Variables:
+    APEX_TEST_REPORT_RECIPIENTS   Comma-separated list of email addresses to send reports to
+    APEX_TEST_WAIT_TIME           Wait time in minutes between sending emails and checking DB
+    APEX_TEST_SENDER              Email address to use as sender for test emails
+    APEX_TEST_PREFIX              Prefix to use in test email subjects
+"""
+
 import os
 import sys
 import time
@@ -144,56 +168,75 @@ async def verify_api_permissions(access_token):
         bool: True if permissions are verified, False otherwise
     """
     try:
-        # Check the Microsoft Graph /me endpoint as a basic connectivity test
+        # For application permissions, we can't use /me endpoint
+        # Instead, try accessing the users endpoint directly
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
         }
         
-        # Try accessing a basic endpoint to verify connectivity
-        endpoint = 'https://graph.microsoft.com/v1.0/me'
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(endpoint, headers=headers) as response:
-                if response.status == 200:
-                    print("Successfully connected to Microsoft Graph API")
-                    return True
-                elif response.status == 401:
-                    # This might indicate that we're using application permissions, not delegated
-                    # Try another endpoint that works with application permissions
-                    print("Authentication required for /me endpoint, trying users endpoint...")
+        # Get the first user from the EMAIL_ACCOUNTS list
+        if EMAIL_ACCOUNTS and EMAIL_ACCOUNTS[0]:
+            user_email = EMAIL_ACCOUNTS[0]
+            print(f"Verifying API permissions by checking access to user: {user_email}")
+            
+            # Try accessing the user directly - this works with application permissions
+            users_endpoint = f'https://graph.microsoft.com/v1.0/users/{user_email}'
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(users_endpoint, headers=headers) as users_response:
+                    response_status = users_response.status
+                    response_text = await users_response.text()
+                    print(f"Graph API user endpoint response status: {response_status}")
+                    print(f"Graph API user endpoint response text: {response_text}")
                     
-                    # Get the first user from the EMAIL_ACCOUNTS list
-                    if EMAIL_ACCOUNTS and EMAIL_ACCOUNTS[0]:
-                        user_email = EMAIL_ACCOUNTS[0]
-                        users_endpoint = f'https://graph.microsoft.com/v1.0/users/{user_email}'
+                    if response_status == 200:
+                        print(f"Successfully accessed user info for {user_email}")
                         
-                        async with session.get(users_endpoint, headers=headers) as users_response:
-                            if users_response.status == 200:
-                                print(f"Successfully accessed user info for {user_email}")
+                        # Now try to check if we have Mail.Send permissions
+                        # We'll do this by checking if we can access mailbox settings
+                        # This doesn't require actually sending mail
+                        mailbox_endpoint = f'https://graph.microsoft.com/v1.0/users/{user_email}/mailboxSettings'
+                        
+                        async with session.get(mailbox_endpoint, headers=headers) as mailbox_response:
+                            mailbox_status = mailbox_response.status
+                            mailbox_text = await mailbox_response.text()
+                            print(f"Graph API mailbox endpoint response status: {mailbox_status}")
+                            
+                            if mailbox_status == 200:
+                                print(f"Successfully accessed mailbox settings - mail permissions confirmed")
                                 return True
                             else:
-                                users_text = await users_response.text()
-                                print(f"Failed to access user info: {users_response.status} - {users_text}")
-                                
-                                # One more attempt - try to get users list
-                                users_list_endpoint = 'https://graph.microsoft.com/v1.0/users'
-                                
-                                async with session.get(users_list_endpoint, headers=headers) as users_list_response:
-                                    if users_list_response.status == 200:
-                                        print("Successfully accessed users list")
-                                        return True
-                                    else:
-                                        users_list_text = await users_list_response.text()
-                                        print(f"Failed to access users list: {users_list_response.status} - {users_list_text}")
-                                        return False
-                else:
-                    response_text = await response.text()
-                    print(f"Failed API permission check: {response.status} - {response_text}")
-                    return False
+                                print(f"Warning: Could not access mailbox settings, but user access successful")
+                                print(f"Mail permissions might be limited: {mailbox_text}")
+                                # We'll continue anyway since we at least have user access
+                                return True
+                    else:
+                        print(f"Failed to access user info: {response_status} - {response_text}")
+                        
+                        # Try one more approach - list users
+                        print("Trying to list users as a fallback...")
+                        users_list_endpoint = 'https://graph.microsoft.com/v1.0/users'
+                        
+                        async with session.get(users_list_endpoint, headers=headers) as users_list_response:
+                            list_status = users_list_response.status
+                            list_text = await users_list_response.text()
+                            print(f"Graph API users list response status: {list_status}")
+                            
+                            if list_status == 200:
+                                print("Successfully accessed users list - basic API access confirmed")
+                                return True
+                            else:
+                                print(f"Failed to access users list: {list_status} - {list_text}")
+                                print("WARNING: API permission issues detected - this will likely cause email delivery failures")
+                                return False
+        else:
+            print("No email accounts configured - cannot verify permissions")
+            return False
                     
     except Exception as e:
         print(f"Error verifying API permissions: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         return False
 
 async def get_db_connection():
@@ -341,18 +384,15 @@ async def send_test_email(access_token, account, test_email, email_content):
     """
     try:
         print(f"Sending test email for category: {test_email.category}")
-        print(f"  From: {test_email.sender}")
+        print(f"  From: {account}")  # Must use authenticated account
         print(f"  To: {test_email.recipient}")
         print(f"  Subject: {email_content['subject']}")
         
         # Update recipient in email content
         email_content['to'] = test_email.recipient
         
-        # IMPORTANT: When sending from a mailbox, the from address must match the authenticated user
-        # Otherwise, the email might be rejected or caught in spam filters
-        sender_address = account  # Use the authenticated account as the sender
-        
         # Create a proper message object for the Microsoft Graph API
+        # IMPORTANT: Do NOT include the "from" field as it must match the authenticated user
         message = {
             "message": {
                 "subject": email_content['subject'],
@@ -367,19 +407,21 @@ async def send_test_email(access_token, account, test_email, email_content):
                         }
                     }
                 ],
-                # We do not set the "from" field as it must match the authenticated user
-                # Setting a different "from" will either be ignored or cause errors
-                "replyTo": [
-                    {
-                        "emailAddress": {
-                            "address": test_email.sender
-                        }
-                    }
-                ],
+                # Only set replyTo if different from the sending account
                 "internetMessageId": f"<{email_content['internet_message_id']}>"
             },
             "saveToSentItems": "true"
         }
+        
+        # Only add replyTo if it's different from the sending account
+        if test_email.sender.lower() != account.lower():
+            message["message"]["replyTo"] = [
+                {
+                    "emailAddress": {
+                        "address": test_email.sender
+                    }
+                }
+            ]
         
         # Add CC recipients if any
         if email_content.get('cc'):
@@ -816,13 +858,6 @@ async def send_report_email(report_recipients):
                     } for recipient in report_recipients
                 ],
                 # We do not set the "from" field as it must match the authenticated user
-                "replyTo": [
-                    {
-                        "emailAddress": {
-                            "address": account
-                        }
-                    }
-                ],
                 "internetMessageId": f"<APEX_TEST_REPORT_{timestamp}@apex.test>"
             },
             "saveToSentItems": "true"
