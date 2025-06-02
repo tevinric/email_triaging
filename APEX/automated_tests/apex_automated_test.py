@@ -1,3 +1,138 @@
+import os
+import sys
+import time
+import uuid
+import asyncio
+import datetime
+import argparse
+import pyodbc
+import json
+import traceback
+from tabulate import tabulate
+import pandas as pd
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
+import aiohttp  # Add this import for the HTTP client
+
+# Import APEX components
+from email_processor.email_client import get_access_token
+from apex_llm.apex_routing import ang_routings
+from config import (
+    CLIENT_ID, TENANT_ID, CLIENT_SECRET, AUTHORITY, SCOPE,
+    SQL_SERVER, SQL_DATABASE, SQL_USERNAME, SQL_PASSWORD,
+    EMAIL_ACCOUNTS
+)
+
+# Load configuration from environment variables
+def get_env_var(var_name, default=None, required=False):
+    """Get environment variable with optional default and required check"""
+    value = os.environ.get(var_name, default)
+    if required and value is None:
+        raise ValueError(f"Required environment variable {var_name} is not set")
+    return value
+
+# Constants from environment variables
+TEST_ID_PREFIX = get_env_var("APEX_TEST_PREFIX", "APEX_AUTOMATED_TEST")
+DEFAULT_WAIT_TIME = int(get_env_var("APEX_TEST_WAIT_TIME", "3"))
+DEFAULT_REPORT_RECIPIENTS = get_env_var("APEX_TEST_REPORT_RECIPIENTS", "").split(",") if get_env_var("APEX_TEST_REPORT_RECIPIENTS") else []
+DEFAULT_TEST_SENDER = get_env_var("APEX_TEST_SENDER", EMAIL_ACCOUNTS[0] if EMAIL_ACCOUNTS else "apex-test@example.com")
+EMAIL_CATEGORIES = list(ang_routings.keys())
+
+# Set up argument parsing
+parser = argparse.ArgumentParser(description='APEX Automated Testing Script')
+parser.add_argument('--recipients', type=str, help='Comma-separated list of email addresses to send the report to (overrides env var)')
+parser.add_argument('--wait-time', type=int, help=f'Wait time in minutes between sending test emails and checking DB (default: {DEFAULT_WAIT_TIME})')
+parser.add_argument('--sender', type=str, help='Email address to use as sender for test emails (overrides env var)')
+parser.add_argument('--prefix', type=str, help='Prefix to use in test email subjects (overrides env var)')
+args = parser.parse_args()
+
+# Global variables to track test results
+test_emails = []
+test_results = []
+error_details = []
+
+class TestEmail:
+    """Class to represent a test email and track its status"""
+    
+    def __init__(self, category, test_id, subject, recipient, sender=None):
+        self.category = category
+        self.test_id = test_id
+        self.subject = subject
+        self.recipient = recipient
+        self.sender = sender or DEFAULT_TEST_SENDER
+        self.message_id = None
+        self.internet_message_id = None
+        self.sent_time = None
+        self.found_in_db = False
+        self.db_record = None
+        self.error = None
+        self.classification_correct = False
+        self.verification_time = None
+    
+    def to_dict(self):
+        """Convert to dictionary for reporting"""
+        return {
+            'category': self.category,
+            'test_id': self.test_id,
+            'subject': self.subject,
+            'recipient': self.recipient,
+            'sender': self.sender,
+            'message_id': self.message_id,
+            'internet_message_id': self.internet_message_id,
+            'sent_time': self.sent_time.strftime('%Y-%m-%d %H:%M:%S') if self.sent_time else None,
+            'verification_time': self.verification_time.strftime('%Y-%m-%d %H:%M:%S') if self.verification_time else None,
+            'found_in_db': self.found_in_db,
+            'classification_correct': self.classification_correct,
+            'error': self.error
+        }
+
+async def get_access_token_with_mail_scope():
+    """
+    Obtain an access token from Microsoft Graph API with Mail.Send scope
+    
+    Returns:
+        str: Access token if successful, None otherwise
+    """
+    try:
+        # First try using the existing access token function
+        print("Attempting to get access token using the default method...")
+        access_token = await get_access_token()
+        
+        if access_token:
+            print("Successfully obtained access token with default method")
+            return access_token
+        
+        print("Default access token method failed, trying alternative method...")
+        
+        # If that fails, we might need to add explicit Mail.Send scope
+        # This requires app registration to have Mail.Send permissions
+        from msal import ConfidentialClientApplication
+        
+        app = ConfidentialClientApplication(
+            CLIENT_ID,
+            authority=AUTHORITY,
+            client_credential=CLIENT_SECRET,
+        )
+        
+        # Try with explicit Mail.Send scope
+        mail_scopes = ['https://graph.microsoft.com/.default', 'https://graph.microsoft.com/Mail.Send']
+        result = await asyncio.to_thread(app.acquire_token_for_client, scopes=mail_scopes)
+        
+        if 'access_token' in result:
+            print("Successfully obtained access token with Mail.Send scope")
+            return result['access_token']
+        else:
+            print(f"Failed to obtain access token with Mail.Send scope")
+            print(f"Error: {result.get('error', 'Unknown error')}")
+            print(f"Error description: {result.get('error_description', 'No description')}")
+            return None
+            
+    except Exception as e:
+        print(f"Error obtaining access token: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return None
+
 async def verify_api_permissions(access_token):
     """
     Verify that the access token has the necessary permissions to send mail
@@ -59,155 +194,7 @@ async def verify_api_permissions(access_token):
                     
     except Exception as e:
         print(f"Error verifying API permissions: {str(e)}")
-        return Falseasync def get_access_token_with_mail_scope():
-    """
-    Obtain an access token from Microsoft Graph API with Mail.Send scope
-    
-    Returns:
-        str: Access token if successful, None otherwise
-    """
-    try:
-        # First try using the existing access token function
-        print("Attempting to get access token using the default method...")
-        access_token = await get_access_token()
-        
-        if access_token:
-            print("Successfully obtained access token with default method")
-            return access_token
-        
-        print("Default access token method failed, trying alternative method...")
-        
-        # If that fails, we might need to add explicit Mail.Send scope
-        # This requires app registration to have Mail.Send permissions
-        from msal import ConfidentialClientApplication
-        
-        app = ConfidentialClientApplication(
-            CLIENT_ID,
-            authority=AUTHORITY,
-            client_credential=CLIENT_SECRET,
-        )
-        
-        # Try with explicit Mail.Send scope
-        mail_scopes = ['https://graph.microsoft.com/.default', 'https://graph.microsoft.com/Mail.Send']
-        result = await asyncio.to_thread(app.acquire_token_for_client, scopes=mail_scopes)
-        
-        if 'access_token' in result:
-            print("Successfully obtained access token with Mail.Send scope")
-            return result['access_token']
-        else:
-            print(f"Failed to obtain access token with Mail.Send scope")
-            print(f"Error: {result.get('error', 'Unknown error')}")
-            print(f"Error description: {result.get('error_description', 'No description')}")
-            return None
-            
-    except Exception as e:
-        print(f"Error obtaining access token: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
-        return None#!/usr/bin/env python3
-"""
-APEX Automated Testing Script
-
-This script performs daily automated testing of the APEX email triaging solution by:
-1. Sending test emails for each APEX category
-2. Waiting for the system to process them
-3. Verifying in the database that they were properly processed
-4. Generating and sending a report email with results
-
-Usage:
-    python apex_automated_test.py [--recipients EMAIL1,EMAIL2] [--wait-time MINUTES]
-
-Options:
-    --recipients     Comma-separated list of email addresses to send the report to (overrides env var)
-    --wait-time      Wait time in minutes between sending test emails and checking DB (overrides env var)
-
-Environment Variables:
-    APEX_TEST_REPORT_RECIPIENTS   Comma-separated list of email addresses to send reports to
-    APEX_TEST_WAIT_TIME           Wait time in minutes between sending emails and checking DB
-    APEX_TEST_SENDER              Email address to use as sender for test emails
-    APEX_TEST_PREFIX              Prefix to use in test email subjects
-"""
-
-import os
-import sys
-import time
-import uuid
-import asyncio
-import datetime
-import argparse
-import pyodbc
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-import json
-import traceback
-from tabulate import tabulate
-import pandas as pd
-import matplotlib.pyplot as plt
-from io import BytesIO
-import base64
-
-# Import APEX components
-from email_processor.email_client import get_access_token, forward_email
-from apex_llm.apex_routing import ang_routings
-from config import (
-    CLIENT_ID, TENANT_ID, CLIENT_SECRET, AUTHORITY, SCOPE,
-    SQL_SERVER, SQL_DATABASE, SQL_USERNAME, SQL_PASSWORD,
-    EMAIL_ACCOUNTS
-)
-
-# Constants
-TEST_ID_PREFIX = "APEX_AUTOMATED_TEST"
-DEFAULT_WAIT_TIME = 3  # minutes
-DEFAULT_REPORT_RECIPIENTS = ["your-email@example.com"]
-EMAIL_CATEGORIES = list(ang_routings.keys())
-DEFAULT_TEST_SENDER = "apex-test@example.com"
-
-# Set up argument parsing
-parser = argparse.ArgumentParser(description='APEX Automated Testing Script')
-parser.add_argument('--recipients', type=str, help='Comma-separated list of email addresses to send the report to (overrides env var)')
-parser.add_argument('--wait-time', type=int, help=f'Wait time in minutes between sending test emails and checking DB (default: {DEFAULT_WAIT_TIME})')
-parser.add_argument('--sender', type=str, help='Email address to use as sender for test emails (overrides env var)')
-parser.add_argument('--prefix', type=str, help='Prefix to use in test email subjects (overrides env var)')
-args = parser.parse_args()
-
-# Global variables to track test results
-test_emails = []
-test_results = []
-error_details = []
-
-class TestEmail:
-    """Class to represent a test email and track its status"""
-    
-    def __init__(self, category, test_id, subject, recipient, sender=None):
-        self.category = category
-        self.test_id = test_id
-        self.subject = subject
-        self.recipient = recipient
-        self.sender = sender or DEFAULT_TEST_SENDER
-        self.message_id = None
-        self.internet_message_id = None
-        self.sent_time = None
-        self.found_in_db = False
-        self.db_record = None
-        self.error = None
-        self.classification_correct = False
-        self.verification_time = None
-    
-    def to_dict(self):
-        """Convert to dictionary for reporting"""
-        return {
-            'category': self.category,
-            'test_id': self.test_id,
-            'subject': self.subject,
-            'recipient': self.recipient,
-            'sender': self.sender,
-            'message_id': self.message_id,
-            'internet_message_id': self.internet_message_id,
-            'sent_time': self.sent_time.strftime('%Y-%m-%d %H:%M:%S') if self.sent_time else None,
-            'verification_time': self.verification_time.strftime('%Y-%m-%d %H:%M:%S') if self.verification_time else None,
-            'found_in_db': self.found_in_db,
-            'classification_correct': self.classification_correct,
-            'error': self.error
-        }
+        return False
 
 async def get_db_connection():
     """Create and return a database connection"""
