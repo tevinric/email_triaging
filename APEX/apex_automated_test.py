@@ -1,4 +1,3 @@
-
 import os
 import sys
 import time
@@ -34,11 +33,11 @@ def get_env_var(var_name, default=None, required=False):
     return value
 
 # Constants from environment variables
-TEST_ID_PREFIX = "APEX_AUTOMATED_TEST"
-DEFAULT_WAIT_TIME = 3  # minutes
-DEFAULT_REPORT_RECIPIENTS = [""]
+TEST_ID_PREFIX = get_env_var("APEX_TEST_PREFIX", "APEX_AUTOMATED_TEST")
+DEFAULT_WAIT_TIME = int(get_env_var("APEX_TEST_WAIT_TIME", "3"))
+DEFAULT_REPORT_RECIPIENTS = get_env_var("APEX_TEST_REPORT_RECIPIENTS", "").split(",") if get_env_var("APEX_TEST_REPORT_RECIPIENTS") else []
+DEFAULT_TEST_SENDER = get_env_var("APEX_TEST_SENDER", EMAIL_ACCOUNTS[0] if EMAIL_ACCOUNTS else "apex-test@example.com")
 EMAIL_CATEGORIES = list(ang_routings.keys())
-DEFAULT_TEST_SENDER = ""
 
 # Set up argument parsing
 parser = argparse.ArgumentParser(description='APEX Automated Testing Script')
@@ -70,6 +69,11 @@ class TestEmail:
         self.error = None
         self.classification_correct = False
         self.verification_time = None
+        # Additional fields
+        self.auto_response_sent = None
+        self.email_body = None
+        self.sts_read_eml = None
+        self.sts_routing = None
     
     def to_dict(self):
         """Convert to dictionary for reporting"""
@@ -77,6 +81,7 @@ class TestEmail:
             'category': self.category,
             'test_id': self.test_id,
             'subject': self.subject,
+            'email_body': self.email_body,
             'recipient': self.recipient,
             'sender': self.sender,
             'message_id': self.message_id,
@@ -85,6 +90,9 @@ class TestEmail:
             'verification_time': self.verification_time.strftime('%Y-%m-%d %H:%M:%S') if self.verification_time else None,
             'found_in_db': self.found_in_db,
             'classification_correct': self.classification_correct,
+            'auto_response_sent': self.auto_response_sent,
+            'sts_read_eml': self.sts_read_eml,
+            'sts_routing': self.sts_routing,
             'error': self.error
         }
 
@@ -259,6 +267,12 @@ async def check_email_in_db(conn, test_email):
             test_email.found_in_db = True
             test_email.db_record = db_record
             
+            # Store additional fields
+            test_email.email_body = db_record.get('eml_bdy', '')
+            test_email.auto_response_sent = db_record.get('auto_response_sent', 'unknown')
+            test_email.sts_read_eml = db_record.get('sts_read_eml', 'unknown')
+            test_email.sts_routing = db_record.get('sts_routing', 'unknown')
+            
             # Check if classification matches expected category
             if 'apex_class' in db_record and db_record['apex_class']:
                 actual_class = str(db_record['apex_class']).lower()
@@ -306,6 +320,7 @@ async def create_test_email_content(category, test_id):
         "online/app": "I'm having trouble accessing my account on the website. My policy number is TEST123456.",
         "retentions": "I would like to cancel my policy. My policy number is TEST123456.",
         "request for quote": "Please send me a quote for adding my new car to my insurance. My policy number is TEST123456.",
+        "debit order switch": "I need to change my debit order details. My policy number is TEST123456.",
         "previous insurance checks/queries": "Can you confirm my previous insurance details? My policy number is TEST123456.",
         "other": "This is a general query about my policy. My policy number is TEST123456."
     }
@@ -597,6 +612,7 @@ def generate_html_report():
             .status-ok {{ background-color: #d4edda; }}
             .status-warning {{ background-color: #fff3cd; }}
             .status-error {{ background-color: #f8d7da; }}
+            .email-body {{ max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
         </style>
     </head>
     <body>
@@ -618,10 +634,14 @@ def generate_html_report():
             <tr>
                 <th>Category</th>
                 <th>Subject</th>
+                <th>Email Body</th>
                 <th>Sent Time</th>
                 <th>Verification Time</th>
                 <th>Found in DB</th>
                 <th>Classification Correct</th>
+                <th>Autoresponse</th>
+                <th>Read Status</th>
+                <th>Routing Status</th>
                 <th>Error</th>
             </tr>
     """
@@ -632,14 +652,33 @@ def generate_html_report():
                       "status-warning" if email.found_in_db and not email.classification_correct else \
                       "status-error"
         
+        # Format the autoresponse status
+        autoresponse_status = "N/A"
+        if email.auto_response_sent:
+            if email.auto_response_sent.lower() == "success":
+                autoresponse_status = '<span class="success">Yes</span>'
+            elif email.auto_response_sent.lower() == "failed":
+                autoresponse_status = '<span class="error">No</span>'
+            else:
+                autoresponse_status = email.auto_response_sent
+        
+        # Truncate email body for display
+        email_body = email.email_body if email.email_body else ""
+        if len(email_body) > 100:
+            email_body = email_body[:100] + "..."
+        
         html += f"""
             <tr class="{status_class}">
                 <td>{email.category}</td>
                 <td>{email.subject}</td>
+                <td class="email-body">{email_body}</td>
                 <td>{email.sent_time.strftime('%Y-%m-%d %H:%M:%S') if email.sent_time else 'N/A'}</td>
                 <td>{email.verification_time.strftime('%Y-%m-%d %H:%M:%S') if email.verification_time else 'N/A'}</td>
                 <td>{'Yes' if email.found_in_db else 'No'}</td>
                 <td>{'Yes' if email.classification_correct else 'No'}</td>
+                <td>{autoresponse_status}</td>
+                <td>{email.sts_read_eml if email.sts_read_eml else 'N/A'}</td>
+                <td>{email.sts_routing if email.sts_routing else 'N/A'}</td>
                 <td>{email.error if email.error else 'None'}</td>
             </tr>
         """
@@ -686,21 +725,39 @@ def generate_csv_report():
     # Create CSV file in memory
     output = StringIO()
     fieldnames = [
-        'category', 'subject', 'sent_time', 'verification_time', 
-        'found_in_db', 'classification_correct', 'error'
+        'category', 'subject', 'email_body', 'sent_time', 'verification_time', 
+        'found_in_db', 'classification_correct', 'autoresponse_sent', 
+        'sts_read_eml', 'sts_routing', 'error'
     ]
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
     
     for email in test_emails:
+        # Format the autoresponse status for CSV
+        autoresponse_status = "N/A"
+        if email.auto_response_sent:
+            if email.auto_response_sent.lower() == "success":
+                autoresponse_status = "Yes"
+            elif email.auto_response_sent.lower() == "failed":
+                autoresponse_status = "No"
+            else:
+                autoresponse_status = email.auto_response_sent
+        
+        # Truncate email body for CSV
+        email_body = email.email_body if email.email_body else ""
+        
         writer.writerow({
             'category': email.category,
             'subject': email.subject,
+            'email_body': email_body,
             'sent_time': email.sent_time.strftime('%Y-%m-%d %H:%M:%S') if email.sent_time else 'N/A',
             'verification_time': email.verification_time.strftime('%Y-%m-%d %H:%M:%S') if email.verification_time else 'N/A',
             'found_in_db': 'Yes' if email.found_in_db else 'No',
             'classification_correct': 'Yes' if email.classification_correct else 'No',
+            'autoresponse_sent': autoresponse_status,
+            'sts_read_eml': email.sts_read_eml if email.sts_read_eml else 'N/A',
+            'sts_routing': email.sts_routing if email.sts_routing else 'N/A',
             'error': email.error if email.error else 'None'
         })
     
