@@ -35,7 +35,7 @@ def get_env_var(var_name, default=None, required=False):
     return value
 
 # Constants from environment variables
-REPORT_RECIPIENTS = get_env_var("APEX_REPORT_RECIPIENTS", "").split(",") if get_env_var("APEX_REPORT_RECIPIENTS") else []
+REPORT_RECIPIENTS = get_env_var("APEX_REPORT_RECIPIENTS", "").split(",") if get_env_var("APEX_REPORT_RECIPIENTS") else ["tevinri@tihsa.co.za"]
 TEST_EMAIL_PREFIX = get_env_var("APEX_TEST_PREFIX", "APEX_AUTOMATED_TEST")
 
 # Set up argument parsing
