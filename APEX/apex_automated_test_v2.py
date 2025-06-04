@@ -377,6 +377,7 @@ class DailyReport:
         plt.title('Email Processing Volume by Hour')
         plt.xticks(hours)
         plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout(pad=2.0)
         
         buffer = BytesIO()
         plt.savefig(buffer, format='png')
@@ -398,7 +399,7 @@ class DailyReport:
         plt.ylabel('Number of Emails')
         plt.title('Email Distribution by Category')
         plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
+        plt.tight_layout(pad=2.0)
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         
         buffer = BytesIO()
@@ -411,7 +412,7 @@ class DailyReport:
         labels = ['Successful', 'Failed']
         sizes = [self.successful_emails, self.failed_emails]
         if sum(sizes) > 0:
-            plt.figure(figsize=(6, 4))  # Smaller size
+            plt.figure(figsize=(8, 6))  # Increased size for better visibility
             colors = ['#4CAF50', '#F44336']
             explode = (0, 0.1)  # Explode the failure slice
 
@@ -422,7 +423,7 @@ class DailyReport:
             plt.title('Email Processing Success Rate')
             plt.axis('equal')
             plt.legend(wedges, labels, loc='lower center', bbox_to_anchor=(0.5, -0.15), ncol=2)
-            plt.tight_layout()
+            plt.tight_layout(pad=3.0)
 
             buffer = BytesIO()
             plt.savefig(buffer, format='png', bbox_inches='tight')
@@ -446,14 +447,14 @@ class DailyReport:
             ar_colors.append('#F44336')
 
         if sum(ar_sizes) > 0:
-            plt.figure(figsize=(5, 3))  # Even smaller size
+            plt.figure(figsize=(8, 6))  # Increased size for better visibility
             wedges, texts, autotexts = plt.pie(
                 ar_sizes, labels=None, colors=ar_colors, autopct='%1.1f%%', shadow=True, startangle=90
             )
             plt.title('Autoresponse Status')
             plt.axis('equal')
-            plt.legend(wedges, ar_labels, loc='lower center', bbox_to_anchor=(0.5, -0.18), ncol=len(ar_labels))
-            plt.tight_layout()
+            plt.legend(wedges, ar_labels, loc='lower center', bbox_to_anchor=(0.5, -0.15), ncol=len(ar_labels))
+            plt.tight_layout(pad=3.0)
 
             buffer = BytesIO()
             plt.savefig(buffer, format='png', bbox_inches='tight')
@@ -478,7 +479,7 @@ class DailyReport:
             plt.ylabel('Number of Occurrences')
             plt.title('Error Distribution')
             plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
+            plt.tight_layout(pad=2.0)
             plt.grid(axis='y', linestyle='--', alpha=0.7)
             
             buffer = BytesIO()
@@ -503,7 +504,7 @@ class DailyReport:
             plt.ylabel('Average Processing Time (seconds)')
             plt.title('Average Processing Time by Category')
             plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
+            plt.tight_layout(pad=2.0)
             plt.grid(axis='y', linestyle='--', alpha=0.7)
             
             buffer = BytesIO()
@@ -520,7 +521,7 @@ class DailyReport:
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         date_str = self.report_date.strftime('%Y-%m-%d')
         
-        # Create HTML report
+        # Create HTML report with enhanced styling
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -535,233 +536,380 @@ class DailyReport:
                     margin: 0;
                     padding: 0;
                     width: 100%;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    color: #333;
+                    line-height: 1.6;
                 }}
                 .container {{
-                    max-width: 1040px;
+                    max-width: 1200px;
                     margin: 48px auto 48px auto;
                     background: #fff;
                     border-radius: 18px;
                     box-shadow: 0 8px 32px rgba(44,62,80,0.13), 0 2px 8px rgba(44,62,80,0.09);
                     padding: 0;
+                    overflow: hidden;
                 }}
                 .header {{
-                    background: #1a253b;  /* Professional dark navy */
+                    background: linear-gradient(135deg, #1a253b 0%, #2c3e50 100%);
                     color: white;
-                    padding: 36px 36px 24px 36px;
+                    padding: 36px 48px 24px 48px;
                     border-radius: 18px 18px 0 0;
                     margin-bottom: 0;
                     box-shadow: 0 2px 8px rgba(44,62,80,0.13);
-                    padding-left: 36px;
-                    padding-right: 36px;
+                }}
+                .header h1 {{
+                    margin-top: 0;
+                    font-weight: 600;
+                    font-size: 2.2em;
+                    margin-bottom: 16px;
+                }}
+                .header p {{
+                    margin: 8px 0;
+                    opacity: 0.9;
+                    font-size: 1.1em;
+                }}
+                .content-wrapper {{
+                    padding: 0 48px 48px 48px;
                 }}
                 .summary {{
                     background: linear-gradient(90deg, #f8fafc 60%, #e3f0fa 100%);
-                    padding: 22px 36px 22px 36px;
-                    border-radius: 0 0 10px 10px;
-                    margin-bottom: 28px;
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
                     box-shadow: 0 1px 4px rgba(44,62,80,0.04);
                     border-left: 5px solid #3498db;
-                    padding-left: 36px;
-                    padding-right: 36px;
+                }}
+                .summary h2 {{
+                    margin-top: 0;
+                    color: #2c3e50;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
                 }}
                 .metric {{
-                    margin-bottom: 12px;
+                    margin-bottom: 16px;
                     display: flex;
                     align-items: center;
                     font-size: 1.08em;
                 }}
                 .metric-label {{
-                    min-width: 210px;
+                    min-width: 230px;
                     color: #3a3a3a;
+                    font-weight: 500;
                 }}
                 .metric-value {{
                     font-weight: 600;
                     font-size: 1.13em;
-                    margin-left: 8px;
-                    margin-right: 8px;
+                    margin-left: 12px;
+                    margin-right: 12px;
                 }}
                 .success {{ color: #2ecc71; }}
                 .warning {{ color: #f39c12; }}
                 .error {{ color: #e74c3c; }}
                 .alerts {{
                     background: linear-gradient(90deg, #fffbe6 60%, #fbeee6 100%);
-                    padding: 20px 36px;
-                    border-radius: 10px;
-                    margin-bottom: 28px;
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
                     border-left: 5px solid #f39c12;
                     box-shadow: 0 1px 4px rgba(241,196,15,0.07);
-                    padding-left: 36px;
-                    padding-right: 36px;
+                }}
+                .alerts h2 {{
+                    margin-top: 0;
+                    color: #d35400;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
+                }}
+                .alert-critical, .alert-warning, .alert-info {{
+                    padding: 16px;
+                    border-radius: 8px;
+                    margin-bottom: 16px;
+                }}
+                .alert-critical {{
+                    background-color: rgba(231, 76, 60, 0.1);
+                    border-left: 4px solid #e74c3c;
+                }}
+                .alert-warning {{
+                    background-color: rgba(243, 156, 18, 0.1);
+                    border-left: 4px solid #f39c12;
+                }}
+                .alert-info {{
+                    background-color: rgba(52, 152, 219, 0.1);
+                    border-left: 4px solid #3498db;
+                }}
+                .alert-critical h3, .alert-warning h3, .alert-info h3 {{
+                    margin-top: 0;
+                    margin-bottom: 8px;
                 }}
                 .recommendations {{
                     background: linear-gradient(90deg, #eafaf1 60%, #e3f6f7 100%);
-                    padding: 20px 36px;
-                    border-radius: 10px;
-                    margin-bottom: 28px;
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
                     border-left: 5px solid #2ecc71;
                     box-shadow: 0 1px 4px rgba(46,204,113,0.07);
-                    padding-left: 36px;
-                    padding-right: 36px;
+                }}
+                .recommendations h2 {{
+                    margin-top: 0;
+                    color: #27ae60;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
+                }}
+                .recommendation-item {{
+                    margin-bottom: 16px;
+                    padding-bottom: 16px;
+                    border-bottom: 1px solid rgba(46,204,113,0.15);
+                }}
+                .recommendation-item:last-child {{
+                    border-bottom: none;
+                    padding-bottom: 0;
+                }}
+                .charts-section {{
+                    margin: 32px 0;
+                }}
+                .charts-section h2 {{
+                    color: #2c3e50;
+                    font-size: 1.6em;
+                    margin-bottom: 24px;
                 }}
                 .charts-grid {{
                     display: flex;
-                    flex-wrap: wrap;
-                    gap: 24px;
-                    margin-bottom: 24px;
-                    padding-left: 36px;
-                    padding-right: 36px;
+                    flex-direction: column;
+                    gap: 32px;
                 }}
                 .charts-row {{
                     display: flex;
                     flex-wrap: nowrap;
-                    width: 100%;
-                    gap: 24px;
-                    margin-bottom: 24px;
+                    gap: 32px;
+                    margin-bottom: 8px;
                 }}
                 .chart {{
-                    flex: 1 1 0;
+                    flex: 1;
                     min-width: 0;
                     background-color: white;
-                    padding: 12px;
-                    border-radius: 10px;
-                    box-shadow: 0 0 10px rgba(0,0,0,0.06);
+                    padding: 20px;
+                    border-radius: 12px;
+                    box-shadow: 0 0 15px rgba(0,0,0,0.06);
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                 }}
+                .chart h3 {{
+                    margin-top: 0;
+                    margin-bottom: 16px;
+                    color: #2c3e50;
+                    text-align: center;
+                    font-size: 1.25em;
+                }}
                 .chart img {{
-                    width: 100%;
+                    max-width: 100%;
                     height: auto;
-                    border-radius: 4px;
+                    border-radius: 8px;
+                    box-shadow: 0 0 5px rgba(0,0,0,0.05);
+                }}
+                .stats-section {{
+                    margin: 32px 0;
+                }}
+                .stats-section h2, .stats-section h3 {{
+                    color: #2c3e50;
+                }}
+                .stats-section h2 {{
+                    font-size: 1.6em;
+                    margin-bottom: 24px;
+                }}
+                .stats-section h3 {{
+                    font-size: 1.4em;
+                    margin: 28px 0 16px 0;
                 }}
                 table {{
                     border-collapse: collapse;
                     width: 100%;
-                    margin-bottom: 20px;
+                    margin-bottom: 32px;
                     background: #fafbfc;
-                    border-radius: 6px;
+                    border-radius: 8px;
                     overflow: hidden;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.03);
                 }}
                 th, td {{
                     border: 1px solid #e1e4e8;
-                    padding: 8px;
+                    padding: 12px 16px;
                     text-align: left;
                 }}
                 th {{
-                    background-color: #f2f2f2;
+                    background-color: #f2f5f9;
+                    font-weight: 600;
+                    color: #2c3e50;
                 }}
                 tr:nth-child(even) {{ background-color: #f9f9f9; }}
                 tr:hover {{ background-color: #f5f5f5; }}
-                .failure-details {{ max-height: 400px; overflow-y: auto; }}
-                @media (max-width: 1200px) {{
-                    .container {{ max-width: 98vw; padding: 8px; }}
-                    .charts-row, .charts-grid {{ flex-direction: column; gap: 0; }}
-                    .chart {{ width: 100%; min-width: 0; }}
+                .failure-section {{
+                    margin: 32px 0;
                 }}
-                @media (max-width: 700px) {{
-                    .container {{ padding: 2px; }}
-                    .header, .summary, .alerts, .recommendations {{ padding: 10px; }}
+                .failure-section h2 {{
+                    color: #e74c3c;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
+                }}
+                .failure-details {{
+                    max-height: 500px;
+                    overflow-y: auto;
+                    border-radius: 8px;
+                    border: 1px solid #eee;
+                    background: #fcfcfc;
+                    padding: 16px;
+                }}
+                .no-emails-alert {{
+                    background: linear-gradient(90deg, #e8f4fc 60%, #daeeff 100%);
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
+                    border-left: 5px solid #3498db;
+                    box-shadow: 0 1px 4px rgba(52,152,219,0.07);
+                }}
+                .support-info {{
+                    background: #f9f9f9;
+                    border-radius: 8px;
+                    padding: 24px 32px;
+                    margin: 32px 0;
+                    border-top: 1px solid #eee;
+                }}
+                .support-info h3 {{
+                    color: #2c3e50;
+                    margin-top: 0;
+                }}
+                .support-info ol {{
+                    padding-left: 24px;
+                }}
+                .support-info li {{
+                    margin-bottom: 12px;
+                }}
+                .footer {{
+                    margin-top: 40px;
+                    padding-top: 20px;
+                    border-top: 1px solid #eee;
+                    color: #777;
+                    font-size: 0.9em;
+                    text-align: center;
+                }}
+                @media (max-width: 1200px) {{
+                    .container {{ max-width: 98vw; }}
+                    .content-wrapper {{ padding: 0 24px 24px 24px; }}
+                }}
+                @media (max-width: 992px) {{
+                    .charts-row {{ flex-direction: column; gap: 24px; }}
+                    .chart {{ width: 100%; }}
+                }}
+                @media (max-width: 768px) {{
+                    .header {{ padding: 24px; }}
+                    .metric {{ flex-direction: column; align-items: flex-start; }}
+                    .metric-label {{ min-width: auto; margin-bottom: 4px; }}
                 }}
             </style>
         </head>
         <body>
             <div class="container">
-            <div class="header">
-                <h1>APEX Email Triaging System - Daily Performance Report</h1>
-                <p>Report Date: {date_str}</p>
-                <p>Generated at: {timestamp}</p>
-            </div>
-            <div class="summary">
-                <h2>Summary</h2>
-                <div class="metric">
-                    <span class="metric-label">Total Emails Processed:</span>
-                    <span class="metric-value">{self.prod_email_count}</span>
-                    <span style="color:#888;">(excluding {self.test_emails} test emails)</span>
+                <div class="header">
+                    <h1>APEX Email Triaging System - Daily Performance Report</h1>
+                    <p>Report Date: {date_str}</p>
+                    <p>Generated at: {timestamp}</p>
                 </div>
-                <div class="metric">
-                    <span class="metric-label">Success Rate:</span>
-                    <span class="metric-value {'success' if (self.prod_email_count > 0 and (self.successful_emails / self.prod_email_count) * 100 >= 95) else 'warning' if (self.prod_email_count > 0 and (self.successful_emails / self.prod_email_count) * 100 >= 90) else 'error'}">
-                        {((self.successful_emails / self.prod_email_count) * 100 if self.prod_email_count else 0.0):.1f}%
-                    </span>
-                    <span style="color:#888;">({self.successful_emails} successful, {self.failed_emails} failed)</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Autoresponse Success Rate:</span>
-                    <span class="metric-value {'success' if (self.prod_email_count > 0 and (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 95) else 'warning' if (self.prod_email_count > 0 and (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 90) else 'error'}">
-                        {((self.autoresponse_stats['success'] / self.prod_email_count) * 100 if self.prod_email_count else 0.0):.1f}%
-                    </span>
-                    <span style="color:#888;">({self.autoresponse_stats['success']} successful, {self.autoresponse_stats['failed']} failed)</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Average Processing Time:</span>
-                    <span class="metric-value">{self.avg_processing_time:.2f} seconds</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Total AI Tokens Used:</span>
-                    <span class="metric-value">{self.token_usage['total']:,}</span>
-                    <span style="color:#888;">(avg: {self.token_usage['avg_per_email']:.1f} per email)</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Total AI Cost:</span>
-                    <span class="metric-value">${self.cost_analysis['total_usd']:.2f}</span>
-                    <span style="color:#888;">(avg: ${self.cost_analysis['avg_per_email']:.3f} per email)</span>
-                </div>
-            </div>
+                
+                <div class="content-wrapper">
+                    <div class="summary">
+                        <h2>Summary</h2>
+                        <div class="metric">
+                            <span class="metric-label">Total Emails Processed:</span>
+                            <span class="metric-value">{self.prod_email_count}</span>
+                            <span style="color:#888;">(excluding {self.test_emails} test emails)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Success Rate:</span>
+                            <span class="metric-value {'success' if (self.prod_email_count > 0 and (self.successful_emails / self.prod_email_count) * 100 >= 95) else 'warning' if (self.prod_email_count > 0 and (self.successful_emails / self.prod_email_count) * 100 >= 90) else 'error'}">
+                                {((self.successful_emails / self.prod_email_count) * 100 if self.prod_email_count else 0.0):.1f}%
+                            </span>
+                            <span style="color:#888;">({self.successful_emails} successful, {self.failed_emails} failed)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Autoresponse Success Rate:</span>
+                            <span class="metric-value {'success' if (self.prod_email_count > 0 and (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 95) else 'warning' if (self.prod_email_count > 0 and (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 90) else 'error'}">
+                                {((self.autoresponse_stats['success'] / self.prod_email_count) * 100 if self.prod_email_count else 0.0):.1f}%
+                            </span>
+                            <span style="color:#888;">({self.autoresponse_stats['success']} successful, {self.autoresponse_stats['failed']} failed)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Average Processing Time:</span>
+                            <span class="metric-value">{self.avg_processing_time:.2f} seconds</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Total AI Tokens Used:</span>
+                            <span class="metric-value">{self.token_usage['total']:,}</span>
+                            <span style="color:#888;">(avg: {self.token_usage['avg_per_email']:.1f} per email)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Total AI Cost:</span>
+                            <span class="metric-value">${self.cost_analysis['total_usd']:.2f}</span>
+                            <span style="color:#888;">(avg: ${self.cost_analysis['avg_per_email']:.3f} per email)</span>
+                        </div>
+                    </div>
         """
         
         # Add alerts if any
         if self.alerts:
             html += """
-            <div class="alerts">
-                <h2>⚠️ Alerts Requiring Attention</h2>
+                    <div class="alerts">
+                        <h2>⚠️ Alerts Requiring Attention</h2>
             """
             
             for alert in self.alerts:
                 if alert['level'] == 'CRITICAL':
                     html += f"""
-                    <div class="alert-critical">
-                        <h3>CRITICAL: {alert['message']}</h3>
-                        <p>{alert['details']}</p>
-                    </div>
+                        <div class="alert-critical">
+                            <h3>CRITICAL: {alert['message']}</h3>
+                            <p>{alert['details']}</p>
+                        </div>
                     """
                 elif alert['level'] == 'WARNING':
                     html += f"""
-                    <div class="alert-warning">
-                        <h3>WARNING: {alert['message']}</h3>
-                        <p>{alert['details']}</p>
-                    </div>
+                        <div class="alert-warning">
+                            <h3>WARNING: {alert['message']}</h3>
+                            <p>{alert['details']}</p>
+                        </div>
                     """
                 else:
                     html += f"""
-                    <div class="alert-info">
-                        <h3>INFO: {alert['message']}</h3>
-                        <p>{alert['details']}</p>
-                    </div>
+                        <div class="alert-info">
+                            <h3>INFO: {alert['message']}</h3>
+                            <p>{alert['details']}</p>
+                        </div>
                     """
             
-            html += "</div>"
+            html += """
+                    </div>
+            """
         
         # Add recommendations if any
         if self.recommendations:
             html += """
-            <div class="recommendations">
-                <h2>📋 Recommendations</h2>
+                    <div class="recommendations">
+                        <h2>📋 Recommendations</h2>
             """
             
             for rec in self.recommendations:
                 html += f"""
-                <div class="recommendation-item">
-                    <b>{rec['category']}:</b> {rec['message']}
-                    <div style="color:#3a3a3a; font-weight:400; margin-top:4px;">{rec['details']}</div>
-                </div>
+                        <div class="recommendation-item">
+                            <b>{rec['category']}:</b> {rec['message']}
+                            <div style="color:#3a3a3a; font-weight:400; margin-top:8px;">{rec['details']}</div>
+                        </div>
                 """
             
-            html += "</div>"
+            html += """
+                    </div>
+            """
         
         # Add charts in a grid layout
         html += """
-        <h2 style="padding-left:36px;">📊 Performance Charts</h2>
-        <div class="charts-grid">
+                    <div class="charts-section">
+                        <h2>📊 Performance Charts</h2>
+                        <div class="charts-grid">
         """
 
         # First row: Email Volume by Hour and Email Distribution by Category
@@ -769,18 +917,18 @@ class DailyReport:
         if 'hourly_volume' in self.charts:
             chart_base64 = base64.b64encode(self.charts['hourly_volume']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Email Volume by Hour</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Email Volume by Hour">
-            </div>
+                            <div class="chart">
+                                <h3>Email Volume by Hour</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Email Volume by Hour">
+                            </div>
             """
         if 'category_distribution' in self.charts:
             chart_base64 = base64.b64encode(self.charts['category_distribution']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Email Distribution by Category</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Email Distribution by Category">
-            </div>
+                            <div class="chart">
+                                <h3>Email Distribution by Category</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Email Distribution by Category">
+                            </div>
             """
         html += '</div>'
 
@@ -789,18 +937,18 @@ class DailyReport:
         if 'success_rate' in self.charts:
             chart_base64 = base64.b64encode(self.charts['success_rate']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Email Processing Success Rate</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Email Processing Success Rate">
-            </div>
+                            <div class="chart">
+                                <h3>Email Processing Success Rate</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Email Processing Success Rate">
+                            </div>
             """
         if 'autoresponse_status' in self.charts:
             chart_base64 = base64.b64encode(self.charts['autoresponse_status']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Autoresponse Status</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Autoresponse Status">
-            </div>
+                            <div class="chart">
+                                <h3>Autoresponse Status</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Autoresponse Status">
+                            </div>
             """
         html += '</div>'
 
@@ -809,39 +957,43 @@ class DailyReport:
             html += '<div class="charts-row">'
             chart_base64 = base64.b64encode(self.charts['processing_time']).decode('utf-8')
             html += f"""
-            <div class="chart" style="width:100%;">
-                <h3>Average Processing Time by Category</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Average Processing Time by Category">
-            </div>
+                            <div class="chart">
+                                <h3>Average Processing Time by Category</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Average Processing Time by Category">
+                            </div>
             """
             html += '</div>'
 
-        # Error distribution (optional, can be below)
+        # Error distribution (optional)
         if 'error_distribution' in self.charts:
             html += '<div class="charts-row">'
             chart_base64 = base64.b64encode(self.charts['error_distribution']).decode('utf-8')
             html += f"""
-            <div class="chart" style="width:100%;">
-                <h3>Error Distribution</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Error Distribution">
-            </div>
+                            <div class="chart">
+                                <h3>Error Distribution</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Error Distribution">
+                            </div>
             """
             html += '</div>'
 
-        html += "</div>"  # Close charts-grid
+        html += """
+                        </div>
+                    </div>
+        """
         
         # Add detailed stats
         html += """
-        <h2>📈 Detailed Statistics</h2>
-        
-        <h3>Category Statistics</h3>
-        <table>
-            <tr>
-                <th>Category</th>
-                <th>Count</th>
-                <th>Percentage</th>
-                <th>Avg. Processing Time (s)</th>
-            </tr>
+                    <div class="stats-section">
+                        <h2>📈 Detailed Statistics</h2>
+                        
+                        <h3>Category Statistics</h3>
+                        <table>
+                            <tr>
+                                <th>Category</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                                <th>Avg. Processing Time (s)</th>
+                            </tr>
         """
         
         # Add category statistics
@@ -850,24 +1002,24 @@ class DailyReport:
             avg_time = self.avg_processing_by_category.get(category, 0)
             
             html += f"""
-            <tr>
-                <td>{category}</td>
-                <td>{count}</td>
-                <td>{percentage:.1f}%</td>
-                <td>{avg_time:.2f}s</td>
-            </tr>
+                            <tr>
+                                <td>{category}</td>
+                                <td>{count}</td>
+                                <td>{percentage:.1f}%</td>
+                                <td>{avg_time:.2f}s</td>
+                            </tr>
             """
         
         html += """
-        </table>
-        
-        <h3>Hourly Volume</h3>
-        <table>
-            <tr>
-                <th>Hour</th>
-                <th>Number of Emails</th>
-                <th>Percentage</th>
-            </tr>
+                        </table>
+                        
+                        <h3>Hourly Volume</h3>
+                        <table>
+                            <tr>
+                                <th>Hour</th>
+                                <th>Number of Emails</th>
+                                <th>Percentage</th>
+                            </tr>
         """
         
         # Add hourly statistics
@@ -876,33 +1028,37 @@ class DailyReport:
             percentage = (count / self.prod_email_count) * 100 if self.prod_email_count else 0
             
             html += f"""
-            <tr>
-                <td>{hour:02d}:00 - {hour:02d}:59</td>
-                <td>{count}</td>
-                <td>{percentage:.1f}%</td>
-            </tr>
+                            <tr>
+                                <td>{hour:02d}:00 - {hour:02d}:59</td>
+                                <td>{count}</td>
+                                <td>{percentage:.1f}%</td>
+                            </tr>
             """
         
-        html += "</table>"
+        html += """
+                        </table>
+                    </div>
+        """
         
         # Add failures section if there are any
         if self.failed_emails > 0:
             html += """
-            <h2>❌ Failures</h2>
-            <div class="failure-details">
+                    <div class="failure-section">
+                        <h2>❌ Failures</h2>
+                        <div class="failure-details">
             """
             
             # Classification failures
             if self.classification_failures:
                 html += f"""
-                <h3>Classification Failures ({len(self.classification_failures)})</h3>
-                <table>
-                    <tr>
-                        <th>Subject</th>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Error</th>
-                    </tr>
+                            <h3>Classification Failures ({len(self.classification_failures)})</h3>
+                            <table>
+                                <tr>
+                                    <th>Subject</th>
+                                    <th>Time</th>
+                                    <th>Status</th>
+                                    <th>Error</th>
+                                </tr>
                 """
                 
                 for failure in self.classification_failures[:10]:  # Show first 10
@@ -921,34 +1077,36 @@ class DailyReport:
                         error = str(error)[:100] + "..."
                     
                     html += f"""
-                    <tr>
-                        <td>{subject}</td>
-                        <td>{time}</td>
-                        <td>{status}</td>
-                        <td>{error}</td>
-                    </tr>
+                                <tr>
+                                    <td>{subject}</td>
+                                    <td>{time}</td>
+                                    <td>{status}</td>
+                                    <td>{error}</td>
+                                </tr>
                     """
                 
                 if len(self.classification_failures) > 10:
                     html += f"""
-                    <tr>
-                        <td colspan="4">... and {len(self.classification_failures) - 10} more failures</td>
-                    </tr>
+                                <tr>
+                                    <td colspan="4">... and {len(self.classification_failures) - 10} more failures</td>
+                                </tr>
                     """
                 
-                html += "</table>"
+                html += """
+                            </table>
+                """
             
             # Routing failures
             if self.routing_failures:
                 html += f"""
-                <h3>Routing Failures ({len(self.routing_failures)})</h3>
-                <table>
-                    <tr>
-                        <th>Subject</th>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Destination</th>
-                    </tr>
+                            <h3>Routing Failures ({len(self.routing_failures)})</h3>
+                            <table>
+                                <tr>
+                                    <th>Subject</th>
+                                    <th>Time</th>
+                                    <th>Status</th>
+                                    <th>Destination</th>
+                                </tr>
                 """
                 
                 for failure in self.routing_failures[:10]:  # Show first 10
@@ -965,33 +1123,35 @@ class DailyReport:
                         subject = str(subject)[:50] + "..."
                     
                     html += f"""
-                    <tr>
-                        <td>{subject}</td>
-                        <td>{time}</td>
-                        <td>{status}</td>
-                        <td>{destination}</td>
-                    </tr>
+                                <tr>
+                                    <td>{subject}</td>
+                                    <td>{time}</td>
+                                    <td>{status}</td>
+                                    <td>{destination}</td>
+                                </tr>
                     """
                 
                 if len(self.routing_failures) > 10:
                     html += f"""
-                    <tr>
-                        <td colspan="4">... and {len(self.routing_failures) - 10} more failures</td>
-                    </tr>
+                                <tr>
+                                    <td colspan="4">... and {len(self.routing_failures) - 10} more failures</td>
+                                </tr>
                     """
                 
-                html += "</table>"
+                html += """
+                            </table>
+                """
             
             # Autoresponse failures
             if self.autoresponse_failures:
                 html += f"""
-                <h3>Autoresponse Failures ({len(self.autoresponse_failures)})</h3>
-                <table>
-                    <tr>
-                        <th>Subject</th>
-                        <th>Time</th>
-                        <th>Sender</th>
-                    </tr>
+                            <h3>Autoresponse Failures ({len(self.autoresponse_failures)})</h3>
+                            <table>
+                                <tr>
+                                    <th>Subject</th>
+                                    <th>Time</th>
+                                    <th>Sender</th>
+                                </tr>
                 """
                 
                 for failure in self.autoresponse_failures[:10]:  # Show first 10
@@ -1007,40 +1167,46 @@ class DailyReport:
                         subject = str(subject)[:50] + "..."
                     
                     html += f"""
-                    <tr>
-                        <td>{subject}</td>
-                        <td>{time}</td>
-                        <td>{sender}</td>
-                    </tr>
+                                <tr>
+                                    <td>{subject}</td>
+                                    <td>{time}</td>
+                                    <td>{sender}</td>
+                                </tr>
                     """
                 
                 if len(self.autoresponse_failures) > 10:
                     html += f"""
-                    <tr>
-                        <td colspan="3">... and {len(self.autoresponse_failures) - 10} more failures</td>
-                    </tr>
+                                <tr>
+                                    <td colspan="3">... and {len(self.autoresponse_failures) - 10} more failures</td>
+                                </tr>
                     """
                 
-                html += "</table>"
+                html += """
+                            </table>
+                """
             
-            html += "</div>"  # Close failure-details
+            html += """
+                        </div>
+                    </div>
+            """
         
         # Add a message if there were no production emails processed
         if self.prod_email_count == 0:
             html += """
-            <div class="alerts">
-                <h2>ℹ️ No Emails Processed</h2>
-                <div class="alert-info">
-                    <h3>No production emails were processed for this date.</h3>
-                    <p>The system did not process any emails on this day. This could be due to no incoming emails or a possible upstream issue.</p>
-                </div>
-            </div>
+                    <div class="no-emails-alert">
+                        <h2>ℹ️ No Emails Processed</h2>
+                        <div class="alert-info">
+                            <h3>No production emails were processed for this date.</h3>
+                            <p>The system did not process any emails on this day. This could be due to no incoming emails or a possible upstream issue.</p>
+                        </div>
+                    </div>
             """
         
-        # Add detailed failures section (sender, recipient, subject, body, routed_to)
+        # Add detailed failures section (sender, recipient, subject, routed_to) - REMOVED BODY FIELD
         html += """
-        <h2>❌ Detailed Failure Information</h2>
-        <div class="failure-details">
+                    <div class="failure-section">
+                        <h2>❌ Detailed Failure Information</h2>
+                        <div class="failure-details">
         """
 
         # Gather all failures (classification, routing, read status, autoresponse)
@@ -1067,70 +1233,72 @@ class DailyReport:
 
         if unique_failures:
             html += """
-            <table>
-                <tr>
-                    <th>Sender</th>
-                    <th>Recipient</th>
-                    <th>Subject</th>
-                    <th>Body</th>
-                    <th>Routed To</th>
-                </tr>
+                            <table>
+                                <tr>
+                                    <th>Sender</th>
+                                    <th>Recipient</th>
+                                    <th>Subject</th>
+                                    <th>Routed To</th>
+                                </tr>
             """
             for failure in unique_failures:
                 sender = failure.get('eml_frm', 'N/A')
                 recipient = failure.get('eml_to', 'N/A')
                 subject = failure.get('eml_sub', 'N/A')
-                body = failure.get('eml_body', 'N/A')
                 routed_to = failure.get('apex_routed_to', 'N/A')
 
                 # Truncate long fields for readability
                 if len(str(subject)) > 80:
                     subject = str(subject)[:80] + "..."
-                if len(str(body)) > 200:
-                    body = str(body)[:200] + "..."
                 if len(str(routed_to)) > 80:
                     routed_to = str(routed_to)[:80] + "..."
 
                 html += f"""
-                <tr>
-                    <td>{sender}</td>
-                    <td>{recipient}</td>
-                    <td>{subject}</td>
-                    <td style="max-width:400px; word-break:break-all;">{body}</td>
-                    <td>{routed_to}</td>
-                </tr>
+                                <tr>
+                                    <td>{sender}</td>
+                                    <td>{recipient}</td>
+                                    <td>{subject}</td>
+                                    <td>{routed_to}</td>
+                                </tr>
                 """
-            html += "</table>"
+            html += """
+                            </table>
+            """
         else:
-            html += "<p>No failures to display.</p>"
+            html += """
+                            <p>No failures to display.</p>
+            """
 
-        html += "</div>"  # Close failure-details
-        
-        html += "<br>"  # Add some spacing before the footer
-        
-        html += f"""
-        <p> Should you have any concerns related to the performance of the APEX Email Triaging System as per the performance stats above, please log a SysAid Incident immediately so that the AI Center of Excellence can investigate further.</p>
-        <br>
-        <p> Use the following link to log a SysAid Incident: <a href="{os.environ.get('incident_link')}">SysAid Portal</a></p>
-        <br>
-        <p> Follow these steps to log a SysAid Incident:</p>
-        <ol style="margin-left: 20px;">
-            <li style="margin-bottom: 10px;">Click on the "Submit an Incident" button</li>
-            <li style="margin-bottom: 10px;">Select the category -> <b>AI Centre of Excellence</b></li>
-            <li style="margin-bottom: 10px;">Select the sub-category -> <b>Email Triaging (APEX)</b> </li>
-            <li style="margin-bottom: 10px;">Select third level category -> <b>Report an issue</b></li>
-            <li style="margin-bottom: 10px;">Provide a description of the incident/issue.</li>
-            <li style="margin-bottom: 10px;">Click on the "Submit" button to log the incident.</li>
-        </ol>
-        <p>Thank you for your cooperation.</p>    
-        
+        html += """
+                        </div>
+                    </div>
         """
         
-        # Close HTML
+        # Support information section
         html += """
-        <div style="margin-top: 30px; padding-top: 10px; border-top: 1px solid #ddd; color: #777; font-size: 0.9em;">
-            <p>This is an automated report from the APEX Email Triaging System.</p>
-        </div>
+                    <div class="support-info">
+                        <h3>Need Support?</h3>
+                        <p>Should you have any concerns related to the performance of the APEX Email Triaging System as per the performance stats above, please log a SysAid Incident immediately so that the AI Center of Excellence can investigate further.</p>
+                        
+                        <p>Use the following link to log a SysAid Incident: <a href="{os.environ.get('incident_link')}">SysAid Portal</a></p>
+                        
+                        <p>Follow these steps to log a SysAid Incident:</p>
+                        <ol>
+                            <li>Click on the "Submit an Incident" button</li>
+                            <li>Select the category -> <b>AI Centre of Excellence</b></li>
+                            <li>Select the sub-category -> <b>Email Triaging (APEX)</b></li>
+                            <li>Select third level category -> <b>Report an issue</b></li>
+                            <li>Provide a description of the incident/issue.</li>
+                            <li>Click on the "Submit" button to log the incident.</li>
+                        </ol>
+                        <p>Thank you for your cooperation.</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>This is an automated report from the APEX Email Triaging System.</p>
+                    </div>
+                </div>
+            </div>
         </body>
         </html>
         """
@@ -1456,12 +1624,50 @@ async def main():
                 <head>
                     <meta charset="UTF-8">
                     <title>APEX Daily Report Error</title>
+                    <style>
+                        body {{
+                            font-family: 'Segoe UI', Arial, sans-serif;
+                            line-height: 1.6;
+                            color: #333;
+                            max-width: 800px;
+                            margin: 20px auto;
+                            padding: 20px;
+                        }}
+                        h1 {{
+                            color: #e74c3c;
+                            border-bottom: 1px solid #eee;
+                            padding-bottom: 10px;
+                        }}
+                        pre {{
+                            white-space: pre-wrap;
+                            word-wrap: break-word;
+                            padding: 15px;
+                            border-radius: 5px;
+                            margin: 15px 0;
+                        }}
+                        .error-message {{
+                            background-color: #f8d7da;
+                            padding: 15px;
+                            border-radius: 5px;
+                            margin-bottom: 20px;
+                        }}
+                        .error-trace {{
+                            background-color: #f8f9fa;
+                            padding: 15px;
+                            border-radius: 5px;
+                            max-height: 400px;
+                            overflow-y: auto;
+                            font-size: 14px;
+                            border: 1px solid #eee;
+                        }}
+                    </style>
                 </head>
                 <body>
                     <h1>❌ APEX Daily Performance Report Failed</h1>
                     <p>The daily performance report script encountered an error:</p>
-                    <pre style="background-color: #f8d7da; padding: 15px; border-radius: 5px;">{error_msg}</pre>
-                    <pre style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; max-height: 400px; overflow-y: auto;">{traceback.format_exc()}</pre>
+                    <div class="error-message">{error_msg}</div>
+                    <h2>Error Details</h2>
+                    <div class="error-trace">{traceback.format_exc()}</div>
                 </body>
                 </html>
                 """
