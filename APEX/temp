@@ -49,19 +49,19 @@ def synthesize_speech_to_file(text, output_file, audio_format="wav", voice_name=
             'extension': '.wav'
         },
         'mp3': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz128KbitRateMonoMp3,
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz128KBitRateMonoMp3,  # Fixed: KBit not Kbit
             'extension': '.mp3'
         },
         'mp3_24k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio24Khz160KbitRateMonoMp3,
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio24Khz160KBitRateMonoMp3,  # Fixed: KBit not Kbit
             'extension': '.mp3'
         },
         'mp3_16k_64k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz64KbitRateMonoMp3,
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz64KBitRateMonoMp3,   # Fixed: KBit not Kbit
             'extension': '.mp3'
         },
         'mp3_16k_32k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KbitRateMonoMp3,
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3,   # Fixed: KBit not Kbit
             'extension': '.mp3'
         },
         'ogg': {
@@ -230,20 +230,3 @@ if __name__ == "__main__":
     
     print("\n🎉 All audio files have been generated!")
     print("📁 Check your current directory for the output files.")
-
-
-Traceback (most recent call last):
-  File "C:\Users\XXXX\AICOE\speect-to-text\tts.py", line 194, in <module>
-    synthesize_speech_to_file(
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^
-        text=sample_text,
-        ^^^^^^^^^^^^^^^^^
-    ...<2 lines>...
-        voice_name="en-US-BrandonMultilingualNeural"
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\XXXX\AICOE\speect-to-text\tts.py", line 52, in synthesize_speech_to_file
-    'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz128KbitRateMonoMp3,
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: type object 'SpeechSynthesisOutputFormat' has no attribute 'Audio16Khz128KbitRateMonoMp3'. Did you mean: 'Audio16Khz128KBitRateMonoMp3'?
