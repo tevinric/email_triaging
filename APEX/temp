@@ -230,3 +230,20 @@ if __name__ == "__main__":
     
     print("\n🎉 All audio files have been generated!")
     print("📁 Check your current directory for the output files.")
+
+
+Traceback (most recent call last):
+  File "C:\Users\XXXX\AICOE\speect-to-text\tts.py", line 194, in <module>
+    synthesize_speech_to_file(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        text=sample_text,
+        ^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        voice_name="en-US-BrandonMultilingualNeural"
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\XXXX\AICOE\speect-to-text\tts.py", line 52, in synthesize_speech_to_file
+    'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz128KbitRateMonoMp3,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'SpeechSynthesisOutputFormat' has no attribute 'Audio16Khz128KbitRateMonoMp3'. Did you mean: 'Audio16Khz128KBitRateMonoMp3'?
