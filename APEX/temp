@@ -30,7 +30,7 @@ def synthesize_speech_to_file(text, output_file, audio_format="wav", voice_name=
     else:
         speech_config.speech_synthesis_voice_name = "en-US-AriaNeural"  # Default voice
     
-    # Audio format configurations
+    # Audio format configurations (using correct Azure Speech SDK format names)
     format_configs = {
         'wav': {
             'format': speechsdk.SpeechSynthesisOutputFormat.Riff24Khz16BitMonoPcm,
@@ -40,39 +40,51 @@ def synthesize_speech_to_file(text, output_file, audio_format="wav", voice_name=
             'format': speechsdk.SpeechSynthesisOutputFormat.Riff8Khz16BitMonoPcm,
             'extension': '.wav'
         },
-        'wav_44k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Riff44100Hz16BitMonoPcm,
+        'wav_16k': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm,
+            'extension': '.wav'
+        },
+        'wav_48k': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Riff48Khz16BitMonoPcm,
             'extension': '.wav'
         },
         'mp3': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio24Khz160KBitRateMonoMp3,
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz128KbitRateMonoMp3,
             'extension': '.mp3'
         },
-        'mp3_128k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio24Khz128KBitRateMonoMp3,
+        'mp3_24k': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio24Khz160KbitRateMonoMp3,
             'extension': '.mp3'
         },
-        'mp3_64k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio24Khz64KBitRateMonoMp3,
+        'mp3_16k_64k': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz64KbitRateMonoMp3,
             'extension': '.mp3'
         },
-        'mp3_48k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3,
+        'mp3_16k_32k': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KbitRateMonoMp3,
             'extension': '.mp3'
         },
         'ogg': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Ogg16Khz16BitMonoOpus,
+            'extension': '.ogg'
+        },
+        'ogg_24k': {
             'format': speechsdk.SpeechSynthesisOutputFormat.Ogg24Khz16BitMonoOpus,
             'extension': '.ogg'
         },
-        'ogg_48k': {
-            'format': speechsdk.SpeechSynthesisOutputFormat.Ogg48Khz16BitMonoOpus,
-            'extension': '.ogg'
+        'webm': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Webm16Khz16BitMonoOpus,
+            'extension': '.webm'
         },
-        'silk': {
+        'webm_24k': {
             'format': speechsdk.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus,
             'extension': '.webm'
         },
         'raw': {
+            'format': speechsdk.SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm,
+            'extension': '.raw'
+        },
+        'raw_24k': {
             'format': speechsdk.SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm,
             'extension': '.raw'
         }
@@ -124,6 +136,26 @@ def synthesize_speech_to_file(text, output_file, audio_format="wav", voice_name=
     
     return False
 
+def list_available_formats():
+    """
+    List all available audio formats
+    """
+    formats = {
+        'WAV Formats': ['wav', 'wav_8k', 'wav_16k', 'wav_48k'],
+        'MP3 Formats': ['mp3', 'mp3_24k', 'mp3_16k_64k', 'mp3_16k_32k'],
+        'OGG Formats': ['ogg', 'ogg_24k'],
+        'WebM Formats': ['webm', 'webm_24k'],
+        'Raw Formats': ['raw', 'raw_24k']
+    }
+    
+    print("📋 Available Audio Formats:")
+    print("=" * 40)
+    for category, fmt_list in formats.items():
+        print(f"\n🎵 {category}:")
+        for fmt in fmt_list:
+            print(f"   - {fmt}")
+    print("\n" + "=" * 40)
+
 def synthesize_multiple_formats(text, base_filename, formats=None, voice_name=None):
     """
     Synthesize speech in multiple formats
@@ -151,11 +183,14 @@ def synthesize_multiple_formats(text, base_filename, formats=None, voice_name=No
 
 # Example usage
 if __name__ == "__main__":
+    # List available formats first
+    list_available_formats()
+    
     # Text to synthesize
     sample_text = "Hello! This is a demonstration of Azure Speech Services with file download capabilities."
     
     # Example 1: Single format
-    print("=== Single Format Example ===")
+    print("\n=== Single Format Example ===")
     synthesize_speech_to_file(
         text=sample_text,
         output_file="output_speech",
@@ -170,7 +205,7 @@ if __name__ == "__main__":
     synthesize_multiple_formats(
         text=sample_text,
         base_filename="speech_sample",
-        formats=['wav', 'mp3', 'mp3_128k', 'ogg'],
+        formats=['wav', 'mp3', 'mp3_24k', 'ogg'],
         voice_name="en-US-JennyNeural"
     )
     
