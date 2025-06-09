@@ -1088,9 +1088,9 @@ def generate_html_report():
             <td>{subject}</td>
             <td>{status_badge}</td>
             <td><span class="{classification_class}">{classification_result}</span></td>
-            <td>{email.processing_time:.2f}s if email.processing_time else 'N/A'}</td>
-            <td>${email.cost_usd:.4f} if email.cost_usd else 'N/A'}</td>
-            <td>{email.tokens_used:,} if email.tokens_used else 'N/A'}</td>
+            <td>{f"{email.processing_time:.2f}s" if email.processing_time else "N/A"}</td>
+            <td>{f"${email.cost_usd:.4f}" if email.cost_usd else "N/A"}</td>
+            <td>{f"{email.tokens_used:,}" if email.tokens_used else "N/A"}</td>
             <td>{autoresponse_status}</td>
             <td>{error_msg}</td>
         </tr>
