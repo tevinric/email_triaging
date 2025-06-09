@@ -25,7 +25,7 @@ SCOPE = ['https://graph.microsoft.com/.default']
 
 # EMAIL CONFIGURATIONS
 EMAIL_ACCOUNTS = [os.environ.get('EMAIL_ACCOUNT')]
-DEFAULT_EMAIL_ACCOUNT = 'tevinri@tihsa.co.za'
+DEFAULT_EMAIL_ACCOUNT = 'none'
 
 # INTERVAL IN SECONDS(30) 
 EMAIL_FETCH_INTERVAL = 30
