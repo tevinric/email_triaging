@@ -155,22 +155,10 @@ class DailyReport:
                         response_text = await response.text()
                         raise Exception(f"Failed to get daily emails: {response.status} - {response_text}")
             
-            # Calculate variance: Emails received today (Mail bin) via MS Graph API - Total Emails Processed
-            # This helps identify if the application missed any emails that went unprocessed
-            self.email_variance = self.daily_received_count - self.prod_email_count
-            
             self.mail_bin_check_success = True
             print(f"Mail bin check completed successfully")
             print(f"MS Graph API - Emails received today: {self.daily_received_count}")
-            print(f"Database - Total emails processed: {self.prod_email_count}")
-            print(f"Variance calculation: {self.daily_received_count} - {self.prod_email_count} = {self.email_variance}")
-            
-            if self.email_variance > 0:
-                print(f"ALERT: {self.email_variance} emails received but not processed (potential missed emails)")
-            elif self.email_variance < 0:
-                print(f"INFO: {abs(self.email_variance)} more emails processed than received (possibly from previous days)")
-            else:
-                print("INFO: Email counts match perfectly")
+            print(f"Note: Variance will be calculated after email processing count is determined")
             
             return True
             
