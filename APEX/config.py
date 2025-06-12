@@ -25,7 +25,7 @@ SCOPE = ['https://graph.microsoft.com/.default']
 
 # EMAIL CONFIGURATIONS
 EMAIL_ACCOUNTS = [os.environ.get('EMAIL_ACCOUNT')]
-DEFAULT_EMAIL_ACCOUNT = 'none'
+DEFAULT_EMAIL_ACCOUNT = ''
 
 # INTERVAL IN SECONDS(30) 
 EMAIL_FETCH_INTERVAL = 30
@@ -82,6 +82,15 @@ elif ENV_TYPE == 'UAT':
         "digital.comms-aiuat": "digitalcomms",
         "claims-aiuat": "claims",
     }
+elif ENV_TYPE == 'PREPROD':
+    EMAIL_TO_FOLDER_MAPPING = {
+        "onlinesupport-aipreprod": "onlinesupport",
+        "policyservice-aipreprod": "policyservice",
+        "tracking-aipreprod": "tracking",
+        "digital.comms-aipreprod": "digitalcomms",
+        "claims-aipreprod": "claims",
+    }
+
 elif ENV_TYPE == 'PROD':
     EMAIL_TO_FOLDER_MAPPING = {
         "onlinesupport": "onlinesupport",

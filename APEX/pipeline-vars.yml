@@ -5,8 +5,8 @@ variables:
     #K8sManifestDir: 
     # SonarQubeApplication:
     # SonarQubeContinueOnError:
-    sonarQubeEndpoint: -
-    projectKey: -
+    sonarQubeEndpoint: 
+    projectKey: 
     #serviceLanguage:
     #RunUnitTests:
     #RunLintChecks:
