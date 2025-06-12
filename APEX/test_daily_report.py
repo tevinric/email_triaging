@@ -34,7 +34,7 @@ REPORT_RECIPIENTS = DAILY_REPORT_RECIPIENTS
 TEST_EMAIL_PREFIX = "APEX Daily Performance Report"
 
 # NEW: Mail bin to monitor for unread emails and daily volume
-MONITORED_MAIL_BIN = get_env_var('MONITORED_MAIL_BIN', EMAIL_ACCOUNTS[0] if EMAIL_ACCOUNTS else None)
+MONITORED_MAIL_BIN = get_env_var('MONITORED_MAIL_BIN', EMAIL_ACCOUNTS[0] if EMAIL_ACCOUNTS and len(EMAIL_ACCOUNTS) > 0 else None)
 
 # Set up argument parsing
 parser = argparse.ArgumentParser(description='APEX Daily Performance Report Script')
@@ -155,12 +155,22 @@ class DailyReport:
                         response_text = await response.text()
                         raise Exception(f"Failed to get daily emails: {response.status} - {response_text}")
             
-            # Calculate variance between received and processed emails
+            # Calculate variance: Emails received today (Mail bin) via MS Graph API - Total Emails Processed
+            # This helps identify if the application missed any emails that went unprocessed
             self.email_variance = self.daily_received_count - self.prod_email_count
             
             self.mail_bin_check_success = True
             print(f"Mail bin check completed successfully")
-            print(f"Daily received: {self.daily_received_count}, Processed: {self.prod_email_count}, Variance: {self.email_variance}")
+            print(f"MS Graph API - Emails received today: {self.daily_received_count}")
+            print(f"Database - Total emails processed: {self.prod_email_count}")
+            print(f"Variance calculation: {self.daily_received_count} - {self.prod_email_count} = {self.email_variance}")
+            
+            if self.email_variance > 0:
+                print(f"ALERT: {self.email_variance} emails received but not processed (potential missed emails)")
+            elif self.email_variance < 0:
+                print(f"INFO: {abs(self.email_variance)} more emails processed than received (possibly from previous days)")
+            else:
+                print("INFO: Email counts match perfectly")
             
             return True
             
@@ -385,18 +395,24 @@ class DailyReport:
     def _generate_insights(self):
         """Generate insights, alerts, and recommendations based on the analysis"""
         # NEW: Check for email variance alerts
-        if self.mail_bin_check_success and abs(self.email_variance) > 0:
-            if abs(self.email_variance) > 5:  # More than 5 emails difference
+        if self.mail_bin_check_success and self.email_variance != 0:
+            if self.email_variance > 5:  # More than 5 emails received but not processed
                 self.alerts.append({
                     'level': 'CRITICAL',
-                    'message': f"Significant email variance detected: {self.email_variance} emails ({self.daily_received_count} received vs {self.prod_email_count} processed)",
-                    'details': f"There is a significant difference between emails received in the mail bin and emails processed by APEX. This may indicate processing issues or system delays."
+                    'message': f"Critical email processing gap: {self.email_variance} emails received but not processed",
+                    'details': f"MS Graph shows {self.daily_received_count} emails received today, but only {self.prod_email_count} were processed. This indicates {self.email_variance} emails may have been missed by the APEX system."
                 })
-            elif abs(self.email_variance) > 0:
+            elif self.email_variance > 0:  # 1-5 emails received but not processed
                 self.alerts.append({
                     'level': 'WARNING',
-                    'message': f"Email variance detected: {self.email_variance} emails ({self.daily_received_count} received vs {self.prod_email_count} processed)",
-                    'details': f"Minor difference between emails received and processed. Monitor for trends."
+                    'message': f"Email processing gap detected: {self.email_variance} emails received but not processed",
+                    'details': f"MS Graph shows {self.daily_received_count} emails received today, but only {self.prod_email_count} were processed. Monitor for processing issues."
+                })
+            elif self.email_variance < -5:  # Significantly more processed than received (unusual)
+                self.alerts.append({
+                    'level': 'WARNING',
+                    'message': f"Unexpected processing count: {abs(self.email_variance)} more emails processed than received today",
+                    'details': f"Processed {self.prod_email_count} emails but MS Graph shows only {self.daily_received_count} received today. This may indicate processing of emails from previous days or other sources."
                 })
         
         # NEW: Check for unread emails alert
@@ -488,11 +504,17 @@ class DailyReport:
             
             # NEW: Recommendations for email variance and unread emails
             if self.mail_bin_check_success:
-                if abs(self.email_variance) > 2:
+                if self.email_variance > 2:
                     self.recommendations.append({
-                        'category': 'Email Processing',
-                        'message': f"Investigate email variance of {self.email_variance} emails between received and processed",
-                        'details': "Check for processing delays, system issues, or emails that may not be reaching the APEX system."
+                        'category': 'Email Processing Gap',
+                        'message': f"Investigate {self.email_variance} emails that were received but not processed",
+                        'details': f"MS Graph API shows {self.daily_received_count} emails received today, but only {self.prod_email_count} were processed. Check for system issues, email filtering problems, or connectivity issues with the mail bin."
+                    })
+                elif self.email_variance < -2:
+                    self.recommendations.append({
+                        'category': 'Processing Analysis',
+                        'message': f"Review why {abs(self.email_variance)} more emails were processed than received today",
+                        'details': f"This may indicate processing of backlogged emails from previous days or emails from other sources. Verify if this is expected behavior."
                     })
                 
                 if self.unread_emails_count > 3:
@@ -1053,7 +1075,7 @@ class DailyReport:
                             <span class="metric-value {'error' if abs(self.email_variance) > 5 else 'warning' if abs(self.email_variance) > 0 else 'success'}">
                                 {'+' if self.email_variance > 0 else ''}{self.email_variance}
                             </span>
-                            <span style="color:#888;">(received - processed)</span>
+                            <span style="color:#888;">(MS Graph received - DB processed){' - Potential missed emails!' if self.email_variance > 0 else ''}</span>
                         </div>
             """
         else:
@@ -1556,8 +1578,10 @@ class DailyReport:
         writer.writerow(['Mail Bin Check Success', 'Yes' if self.mail_bin_check_success else 'No'])
         if self.mail_bin_check_success:
             writer.writerow(['Unread Emails in Mail Bin', self.unread_emails_count])
-            writer.writerow(['Emails Received Today (Mail Bin)', self.daily_received_count])
-            writer.writerow(['Email Processing Variance', self.email_variance])
+            writer.writerow(['Emails Received Today (MS Graph)', self.daily_received_count])
+            writer.writerow(['Total Emails Processed (Database)', self.prod_email_count])
+            writer.writerow(['Variance (MS Graph - Database)', self.email_variance])
+            writer.writerow(['Variance Explanation', f"{'Potential missed emails' if self.email_variance > 0 else 'More processed than received today' if self.email_variance < 0 else 'Perfect match'}"])
         else:
             writer.writerow(['Mail Bin Check Error', self.mail_bin_error_message or 'Unknown error'])
         writer.writerow([])
