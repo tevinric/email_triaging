@@ -35,9 +35,9 @@ def get_env_var(var_name, default=None, required=False):
 # Constants from environment variables
 TEST_ID_PREFIX = "APEX_AUTOMATED_TEST"
 DEFAULT_WAIT_TIME = 1  # minutes
-DEFAULT_REPORT_RECIPIENTS = [""]
+DEFAULT_REPORT_RECIPIENTS = ["tevinri@tihsa.co.za"]
 EMAIL_CATEGORIES = list(ang_routings.keys())
-DEFAULT_TEST_SENDER = ""
+DEFAULT_TEST_SENDER = "aireporting@tihsa.co.za"
 
 # Set up argument parsing
 parser = argparse.ArgumentParser(description='APEX Automated Testing Script')

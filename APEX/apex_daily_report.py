@@ -6,8 +6,6 @@ import datetime
 import pyodbc
 import json
 import traceback
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 import aiohttp
 import pandas as pd
 import numpy as np
@@ -16,15 +14,12 @@ import matplotlib.dates as mdates
 from io import BytesIO
 import base64
 from collections import Counter, defaultdict
-import textwrap
 
 # Import APEX components for email sending and token acquisition
 from email_processor.email_client import get_access_token
-from config import (
-    CLIENT_ID, TENANT_ID, CLIENT_SECRET, AUTHORITY, SCOPE,
+from config import (CLIENT_ID, TENANT_ID, CLIENT_SECRET, AUTHORITY, SCOPE,
     SQL_SERVER, SQL_DATABASE, SQL_USERNAME, SQL_PASSWORD,
-    EMAIL_ACCOUNTS
-)
+    EMAIL_ACCOUNTS, DAILY_REPORT_RECIPIENTS)
 
 # Load configuration from environment variables
 def get_env_var(var_name, default=None, required=False):
@@ -35,8 +30,8 @@ def get_env_var(var_name, default=None, required=False):
     return value
 
 # Constants from environment variables
-REPORT_RECIPIENTS = get_env_var("APEX_REPORT_RECIPIENTS", "").split(",") if get_env_var("APEX_REPORT_RECIPIENTS") else ["tevinri@tihsa.co.za"]
-TEST_EMAIL_PREFIX = get_env_var("APEX_TEST_PREFIX", "APEX_AUTOMATED_TEST")
+REPORT_RECIPIENTS = DAILY_REPORT_RECIPIENTS
+TEST_EMAIL_PREFIX = "APEX Daily Performance Report"
 
 # Set up argument parsing
 parser = argparse.ArgumentParser(description='APEX Daily Performance Report Script')
@@ -97,12 +92,21 @@ class DailyReport:
         self.recommendations = []
         
     async def fetch_data(self):
-        """Fetch email processing data from the database"""
+        """Fetch email processing data from the database, including model costs"""
         try:
             # Connect to the database
             conn = await self.get_db_connection()
             cursor = conn.cursor()
-            
+
+            # Fetch model costs for gpt-4o and gpt-4o-mini
+            cursor.execute("""
+                SELECT model, prompt_cost, completion_cost, cache_cost
+                FROM [dbo].[model_costs]
+                WHERE model IN ('gpt-4o', 'gpt-4o-mini')
+            """)
+            model_costs = {row[0]: {'prompt': row[1], 'completion': row[2], 'cache': row[3]} for row in cursor.fetchall()}
+            self.model_costs = model_costs  # Save for later use
+
             # Query for all emails processed during the report date
             query = """
             SELECT * FROM [dbo].[logs]
@@ -110,37 +114,36 @@ class DailyReport:
             ORDER BY dttm_proc ASC
             """
             cursor.execute(query, (self.report_start, self.report_end))
-            
+
             # Fetch all rows
             columns = [column[0] for column in cursor.description]
             self.all_emails = []
-            
+
             for row in cursor.fetchall():
-                # Convert row to dict
                 email_data = {columns[i]: row[i] for i in range(len(columns))}
                 self.all_emails.append(email_data)
-            
+
             # Close connection
             cursor.close()
             conn.close()
-            
+
             print(f"Fetched {len(self.all_emails)} emails from database for {self.report_date}")
-            
+
             # Filter out test emails
-            self.prod_emails = [email for email in self.all_emails 
-                               if not (email.get('eml_sub') and 
+            self.prod_emails = [email for email in self.all_emails
+                               if not (email.get('eml_sub') and
                                       TEST_EMAIL_PREFIX in str(email.get('eml_sub', '')))]
-            
+
             self.test_emails = len(self.all_emails) - len(self.prod_emails)
             print(f"Identified {self.test_emails} test emails, {len(self.prod_emails)} production emails")
-            
+
             return True
-            
+
         except Exception as e:
             print(f"Error fetching data: {str(e)}")
             print(traceback.format_exc())
             return False
-    
+
     async def get_db_connection(self):
         """Create and return a database connection"""
         try:
@@ -153,10 +156,15 @@ class DailyReport:
             raise
     
     def analyze_data(self):
-        """Analyze the email data and calculate statistics"""
+        """Analyze the email data and calculate statistics, including accurate cost calculation"""
+        # Remove the early return if no production emails
         if not self.prod_emails:
             print("No production emails to analyze")
-            return False
+            # Do not return False; allow report to be generated
+            self.prod_email_count = 0
+            self.successful_emails = 0
+            self.failed_emails = 0
+            return True
         
         # Basic counts
         self.prod_email_count = len(self.prod_emails)
@@ -227,15 +235,42 @@ class DailyReport:
         }
         
         # Token usage and cost analysis
-        total_tokens = sum(email.get('gpt_4o_total_tokens', 0) + email.get('gpt_4o_mini_total_tokens', 0) 
-                           for email in self.prod_emails)
-        total_cost = sum(email.get('apex_cost_usd', 0) for email in self.prod_emails)
-        
+        total_tokens = sum(
+            (email.get('gpt_4o_prompt_tokens', 0) or 0) +
+            (email.get('gpt_4o_completion_tokens', 0) or 0) +
+            (email.get('gpt_4o_cached_tokens', 0) or 0) +
+            (email.get('gpt_4o_mini_prompt_tokens', 0) or 0) +
+            (email.get('gpt_4o_mini_completion_tokens', 0) or 0) +
+            (email.get('gpt_4o_mini_cached_tokens', 0) or 0)
+            for email in self.prod_emails
+        )
+
+        # --- Accurate cost calculation using model_costs ---
+        cost_gpt4o = self.model_costs.get('gpt-4o', {'prompt': 0, 'completion': 0, 'cache': 0})
+        cost_gpt4o_mini = self.model_costs.get('gpt-4o-mini', {'prompt': 0, 'completion': 0, 'cache': 0})
+
+        total_cost = 0.0
+        for email in self.prod_emails:
+            # gpt-4o
+            gpt4o_prompt = (email.get('gpt_4o_prompt_tokens', 0) or 0) * cost_gpt4o['prompt']/1000000
+            gpt4o_completion = (email.get('gpt_4o_completion_tokens', 0) or 0) * cost_gpt4o['completion']/1000000
+            gpt4o_cache = (email.get('gpt_4o_cached_tokens', 0) or 0) * cost_gpt4o['cache']/1000000
+            # gpt-4o-mini
+            gpt4o_mini_prompt = (email.get('gpt_4o_mini_prompt_tokens', 0) or 0) * cost_gpt4o_mini['prompt']/1000000
+            gpt4o_mini_completion = (email.get('gpt_4o_mini_completion_tokens', 0) or 0) * cost_gpt4o_mini['completion']/1000000
+            gpt4o_mini_cache = (email.get('gpt_4o_mini_cached_tokens', 0) or 0) * cost_gpt4o_mini['cache']/1000000
+
+            email_cost = (
+                gpt4o_prompt + gpt4o_completion + gpt4o_cache +
+                gpt4o_mini_prompt + gpt4o_mini_completion + gpt4o_mini_cache
+            )
+            total_cost += email_cost
+
         self.token_usage = {
             'total': total_tokens,
             'avg_per_email': total_tokens / self.prod_email_count if self.prod_email_count else 0
         }
-        
+
         self.cost_analysis = {
             'total_usd': total_cost,
             'avg_per_email': total_cost / self.prod_email_count if self.prod_email_count else 0
@@ -368,14 +403,14 @@ class DailyReport:
         hours = list(range(24))
         counts = [self.hourly_counts.get(hour, 0) for hour in hours]
         
-        plt.bar(hours, counts)
+        plt.bar(hours, counts, color='#2176ae')
         plt.xlabel('Hour of Day')
         plt.ylabel('Number of Emails')
         plt.title('Email Processing Volume by Hour')
         plt.xticks(hours)
         plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout(pad=2.0)
         
-        # Save to BytesIO
         buffer = BytesIO()
         plt.savefig(buffer, format='png')
         buffer.seek(0)
@@ -387,17 +422,16 @@ class DailyReport:
         categories = list(self.category_counts.keys())
         counts = list(self.category_counts.values())
         
-        # Sort by count
         sorted_data = sorted(zip(categories, counts), key=lambda x: x[1], reverse=True)
         categories = [x[0] for x in sorted_data]
         counts = [x[1] for x in sorted_data]
         
-        plt.bar(categories, counts)
+        plt.bar(categories, counts, color='#2176ae')
         plt.xlabel('Category')
         plt.ylabel('Number of Emails')
         plt.title('Email Distribution by Category')
         plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
+        plt.tight_layout(pad=2.0)
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         
         buffer = BytesIO()
@@ -407,43 +441,59 @@ class DailyReport:
         plt.close()
         
         # 3. Success/Failure pie chart
-        plt.figure(figsize=(8, 8))
         labels = ['Successful', 'Failed']
         sizes = [self.successful_emails, self.failed_emails]
-        colors = ['#4CAF50', '#F44336']
-        explode = (0, 0.1)  # Explode the failure slice
-        
-        plt.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%', 
-                shadow=True, startangle=90)
-        plt.axis('equal')
-        plt.title('Email Processing Success Rate')
-        
-        buffer = BytesIO()
-        plt.savefig(buffer, format='png')
-        buffer.seek(0)
-        self.charts['success_rate'] = buffer.getvalue()
-        plt.close()
-        
+        if sum(sizes) > 0:
+            plt.figure(figsize=(8, 6))  # Increased size for better visibility
+            colors = ['#4CAF50', '#F44336']
+            explode = (0, 0.1)  # Explode the failure slice
+
+            wedges, texts, autotexts = plt.pie(
+                sizes, explode=explode, labels=None, colors=colors, autopct='%1.1f%%',
+                shadow=True, startangle=90
+            )
+            plt.title('Email Processing Success Rate')
+            plt.axis('equal')
+            plt.legend(wedges, labels, loc='lower center', bbox_to_anchor=(0.5, -0.15), ncol=2)
+            plt.tight_layout(pad=3.0)
+
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', bbox_inches='tight')
+            buffer.seek(0)
+            self.charts['success_rate'] = buffer.getvalue()
+            plt.close()
+        # else: do not add 'success_rate' chart if no data
+
         # 4. Autoresponse status
-        plt.figure(figsize=(8, 8))
-        labels = ['Success', 'Failed', 'Not Attempted', 'Unknown']
-        sizes = [
-            self.autoresponse_stats['success'],
-            self.autoresponse_stats['failed'],
-            self.autoresponse_stats['not_attempted'],
-            self.autoresponse_stats['unknown']
-        ]
-        colors = ['#4CAF50', '#F44336', '#FFC107', '#9E9E9E']
-        
-        plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', shadow=True, startangle=90)
-        plt.axis('equal')
-        plt.title('Autoresponse Status')
-        
-        buffer = BytesIO()
-        plt.savefig(buffer, format='png')
-        buffer.seek(0)
-        self.charts['autoresponse_status'] = buffer.getvalue()
-        plt.close()
+        # Only include 'Success' and 'Failed' in the pie chart
+        ar_labels = []
+        ar_sizes = []
+        ar_colors = []
+        if self.autoresponse_stats['success'] > 0:
+            ar_labels.append('Success')
+            ar_sizes.append(self.autoresponse_stats['success'])
+            ar_colors.append('#4CAF50')
+        if self.autoresponse_stats['failed'] > 0:
+            ar_labels.append('Failed')
+            ar_sizes.append(self.autoresponse_stats['failed'])
+            ar_colors.append('#F44336')
+
+        if sum(ar_sizes) > 0:
+            plt.figure(figsize=(8, 6))  # Increased size for better visibility
+            wedges, texts, autotexts = plt.pie(
+                ar_sizes, labels=None, colors=ar_colors, autopct='%1.1f%%', shadow=True, startangle=90
+            )
+            plt.title('Autoresponse Status')
+            plt.axis('equal')
+            plt.legend(wedges, ar_labels, loc='lower center', bbox_to_anchor=(0.5, -0.15), ncol=len(ar_labels))
+            plt.tight_layout(pad=3.0)
+
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', bbox_inches='tight')
+            buffer.seek(0)
+            self.charts['autoresponse_status'] = buffer.getvalue()
+            plt.close()
+        # else: do not add 'autoresponse_status' chart if no data
         
         # 5. Error distribution if there are errors
         if sum(self.error_counts.values()) > 0:
@@ -461,7 +511,7 @@ class DailyReport:
             plt.ylabel('Number of Occurrences')
             plt.title('Error Distribution')
             plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
+            plt.tight_layout(pad=2.0)
             plt.grid(axis='y', linestyle='--', alpha=0.7)
             
             buffer = BytesIO()
@@ -481,12 +531,12 @@ class DailyReport:
             categories = [x[0] for x in sorted_data]
             times = [x[1] for x in sorted_data]
             
-            plt.bar(categories, times, color='#2196F3')
+            plt.bar(categories, times, color='#2176ae')
             plt.xlabel('Category')
             plt.ylabel('Average Processing Time (seconds)')
             plt.title('Average Processing Time by Category')
             plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
+            plt.tight_layout(pad=2.0)
             plt.grid(axis='y', linestyle='--', alpha=0.7)
             
             buffer = BytesIO()
@@ -503,7 +553,7 @@ class DailyReport:
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         date_str = self.report_date.strftime('%Y-%m-%d')
         
-        # Create HTML report
+        # Create HTML report with enhanced styling
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -512,220 +562,470 @@ class DailyReport:
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>APEX Daily Performance Report - {date_str}</title>
             <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
-                h1, h2, h3 {{ color: #2c3e50; }}
-                .header {{ background-color: #3498db; color: white; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
-                .summary {{ background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+                body {{
+                    background: linear-gradient(135deg, #e3e9f7 0%, #f7fafc 100%);
+                    min-height: 100vh;
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    color: #333;
+                    line-height: 1.6;
+                }}
+                .container {{
+                    max-width: 1200px;
+                    margin: 48px auto 48px auto;
+                    background: #fff;
+                    border-radius: 18px;
+                    box-shadow: 0 8px 32px rgba(44,62,80,0.13), 0 2px 8px rgba(44,62,80,0.09);
+                    padding: 0;
+                    overflow: hidden;
+                }}
+                .header {{
+                    background: #1a253b;
+                    color: white;
+                    padding: 36px 48px 24px 48px;
+                    border-radius: 18px 18px 0 0;
+                    margin-bottom: 0;
+                    box-shadow: 0 2px 8px rgba(44,62,80,0.13);
+                }}
+                .header h1 {{
+                    margin-top: 0;
+                    font-weight: 600;
+                    font-size: 2.2em;
+                    margin-bottom: 16px;
+                }}
+                .header p {{
+                    margin: 8px 0;
+                    opacity: 0.9;
+                    font-size: 1.1em;
+                }}
+                .content-wrapper {{
+                    padding: 0 48px 48px 48px;
+                }}
+                .summary {{
+                    background: linear-gradient(90deg, #f8fafc 60%, #e3f0fa 100%);
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
+                    box-shadow: 0 1px 4px rgba(44,62,80,0.04);
+                    border-left: 5px solid #3498db;
+                }}
+                .summary h2 {{
+                    margin-top: 0;
+                    color: #2c3e50;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
+                }}
+                .metric {{
+                    margin-bottom: 16px;
+                    display: flex;
+                    align-items: center;
+                    font-size: 1.08em;
+                }}
+                .metric-label {{
+                    min-width: 230px;
+                    color: #3a3a3a;
+                    font-weight: 500;
+                }}
+                .metric-value {{
+                    font-weight: 600;
+                    font-size: 1.13em;
+                    margin-left: 12px;
+                    margin-right: 12px;
+                }}
                 .success {{ color: #2ecc71; }}
                 .warning {{ color: #f39c12; }}
                 .error {{ color: #e74c3c; }}
-                .metric {{ margin-bottom: 10px; }}
-                .metric-value {{ font-weight: bold; font-size: 1.1em; }}
-                .alerts {{ background-color: #fff3cd; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
-                .alert-critical {{ background-color: #f8d7da; color: #721c24; padding: 10px; margin: 10px 0; border-radius: 5px; }}
-                .alert-warning {{ background-color: #fff3cd; color: #856404; padding: 10px; margin: 10px 0; border-radius: 5px; }}
-                .alert-info {{ background-color: #d1ecf1; color: #0c5460; padding: 10px; margin: 10px 0; border-radius: 5px; }}
-                .recommendations {{ background-color: #d4edda; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
-                .charts {{ display: flex; flex-wrap: wrap; justify-content: space-between; margin-bottom: 20px; }}
-                .chart {{ width: 48%; margin-bottom: 20px; background-color: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
-                .chart img {{ width: 100%; height: auto; }}
-                table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; }}
+                .alerts {{
+                    background: linear-gradient(90deg, #fffbe6 60%, #fbeee6 100%);
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
+                    border-left: 5px solid #f39c12;
+                    box-shadow: 0 1px 4px rgba(241,196,15,0.07);
+                }}
+                .alerts h2 {{
+                    margin-top: 0;
+                    color: #d35400;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
+                }}
+                .alert-critical, .alert-warning, .alert-info {{
+                    padding: 16px;
+                    border-radius: 8px;
+                    margin-bottom: 16px;
+                }}
+                .alert-critical {{
+                    background-color: rgba(231, 76, 60, 0.1);
+                    border-left: 4px solid #e74c3c;
+                }}
+                .alert-warning {{
+                    background-color: rgba(243, 156, 18, 0.1);
+                    border-left: 4px solid #f39c12;
+                }}
+                .alert-info {{
+                    background-color: rgba(52, 152, 219, 0.1);
+                    border-left: 4px solid #3498db;
+                }}
+                .alert-critical h3, .alert-warning h3, .alert-info h3 {{
+                    margin-top: 0;
+                    margin-bottom: 8px;
+                }}
+                .recommendations {{
+                    background: linear-gradient(90deg, #eafaf1 60%, #e3f6f7 100%);
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
+                    border-left: 5px solid #2ecc71;
+                    box-shadow: 0 1px 4px rgba(46,204,113,0.07);
+                }}
+                .recommendations h2 {{
+                    margin-top: 0;
+                    color: #27ae60;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
+                }}
+                .recommendation-item {{
+                    margin-bottom: 16px;
+                    padding-bottom: 16px;
+                    border-bottom: 1px solid rgba(46,204,113,0.15);
+                }}
+                .recommendation-item:last-child {{
+                    border-bottom: none;
+                    padding-bottom: 0;
+                }}
+                .charts-section {{
+                    margin: 32px 0;
+                }}
+                .charts-section h2 {{
+                    color: #2c3e50;
+                    font-size: 1.6em;
+                    margin-bottom: 24px;
+                }}
+                .charts-grid {{
+                    display: flex;
+                    flex-direction: column;
+                    gap: 32px;
+                }}
+                .charts-row {{
+                    display: flex;
+                    flex-wrap: nowrap;
+                    gap: 32px;
+                    margin-bottom: 8px;
+                }}
+                .chart {{
+                    flex: 1;
+                    min-width: 0;
+                    background-color: white;
+                    padding: 20px;
+                    border-radius: 12px;
+                    box-shadow: 0 0 15px rgba(0,0,0,0.06);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }}
+                .chart h3 {{
+                    margin-top: 0;
+                    margin-bottom: 16px;
+                    color: #2c3e50;
+                    text-align: center;
+                    font-size: 1.25em;
+                }}
+                .chart img {{
+                    max-width: 100%;
+                    height: auto;
+                    border-radius: 8px;
+                    box-shadow: 0 0 5px rgba(0,0,0,0.05);
+                }}
+                .stats-section {{
+                    margin: 32px 0;
+                }}
+                .stats-section h2, .stats-section h3 {{
+                    color: #2c3e50;
+                }}
+                .stats-section h2 {{
+                    font-size: 1.6em;
+                    margin-bottom: 24px;
+                }}
+                .stats-section h3 {{
+                    font-size: 1.4em;
+                    margin: 28px 0 16px 0;
+                }}
+                table {{
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin-bottom: 32px;
+                    background: #fafbfc;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.03);
+                }}
+                th, td {{
+                    border: 1px solid #e1e4e8;
+                    padding: 12px 16px;
+                    text-align: left;
+                }}
+                th {{
+                    background-color: #f2f5f9;
+                    font-weight: 600;
+                    color: #2c3e50;
+                }}
                 tr:nth-child(even) {{ background-color: #f9f9f9; }}
                 tr:hover {{ background-color: #f5f5f5; }}
-                .failure-details {{ max-height: 400px; overflow-y: auto; }}
-                @media (max-width: 768px) {{
+                .failure-section {{
+                    margin: 32px 0;
+                }}
+                .failure-section h2 {{
+                    color: #e74c3c;
+                    font-size: 1.6em;
+                    margin-bottom: 20px;
+                }}
+                .failure-details {{
+                    max-height: 500px;
+                    overflow-y: auto;
+                    border-radius: 8px;
+                    border: 1px solid #eee;
+                    background: #fcfcfc;
+                    padding: 16px;
+                }}
+                .no-emails-alert {{
+                    background: linear-gradient(90deg, #e8f4fc 60%, #daeeff 100%);
+                    padding: 28px 32px;
+                    border-radius: 12px;
+                    margin: 32px 0;
+                    border-left: 5px solid #3498db;
+                    box-shadow: 0 1px 4px rgba(52,152,219,0.07);
+                }}
+                .support-info {{
+                    background: #f9f9f9;
+                    border-radius: 8px;
+                    padding: 24px 32px;
+                    margin: 32px 0;
+                    border-top: 1px solid #eee;
+                }}
+                .support-info h3 {{
+                    color: #2c3e50;
+                    margin-top: 0;
+                }}
+                .support-info ol {{
+                    padding-left: 24px;
+                }}
+                .support-info li {{
+                    margin-bottom: 12px;
+                }}
+                .footer {{
+                    margin-top: 40px;
+                    padding-top: 20px;
+                    border-top: 1px solid #eee;
+                    color: #777;
+                    font-size: 0.9em;
+                    text-align: center;
+                }}
+                @media (max-width: 1200px) {{
+                    .container {{ max-width: 98vw; }}
+                    .content-wrapper {{ padding: 0 24px 24px 24px; }}
+                }}
+                @media (max-width: 992px) {{
+                    .charts-row {{ flex-direction: column; gap: 24px; }}
                     .chart {{ width: 100%; }}
+                }}
+                @media (max-width: 768px) {{
+                    .header {{ padding: 24px; }}
+                    .metric {{ flex-direction: column; align-items: flex-start; }}
+                    .metric-label {{ min-width: auto; margin-bottom: 4px; }}
                 }}
             </style>
         </head>
         <body>
-            <div class="header">
-                <h1>APEX Email Triaging System - Daily Performance Report</h1>
-                <p>Report Date: {date_str}</p>
-                <p>Generated at: {timestamp}</p>
-            </div>
-            
-            <div class="summary">
-                <h2>Summary</h2>
-                
-                <div class="metric">
-                    <span>Total Emails Processed: </span>
-                    <span class="metric-value">{self.prod_email_count}</span>
-                    <span> (excluding {self.test_emails} test emails)</span>
+            <div class="container">
+                <div class="header">
+                    <h1>APEX Email Triaging System - Daily Performance Report</h1>
+                    <p>Report Date: {date_str}</p>
+                    <p>Generated at: {timestamp}</p>
                 </div>
                 
-                <div class="metric">
-                    <span>Success Rate: </span>
-                    <span class="metric-value {'success' if (self.successful_emails / self.prod_email_count) * 100 >= 95 else 'warning' if (self.successful_emails / self.prod_email_count) * 100 >= 90 else 'error'}">
-                        {(self.successful_emails / self.prod_email_count) * 100:.1f}%
-                    </span>
-                    <span> ({self.successful_emails} successful, {self.failed_emails} failed)</span>
-                </div>
-                
-                <div class="metric">
-                    <span>Autoresponse Success Rate: </span>
-                    <span class="metric-value {'success' if (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 95 else 'warning' if (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 90 else 'error'}">
-                        {(self.autoresponse_stats['success'] / self.prod_email_count) * 100:.1f}%
-                    </span>
-                    <span> ({self.autoresponse_stats['success']} successful, {self.autoresponse_stats['failed']} failed)</span>
-                </div>
-                
-                <div class="metric">
-                    <span>Average Processing Time: </span>
-                    <span class="metric-value">
-                        {self.avg_processing_time:.2f} seconds
-                    </span>
-                </div>
-                
-                <div class="metric">
-                    <span>Total AI Tokens Used: </span>
-                    <span class="metric-value">
-                        {self.token_usage['total']:,}
-                    </span>
-                    <span> (avg: {self.token_usage['avg_per_email']:.1f} per email)</span>
-                </div>
-                
-                <div class="metric">
-                    <span>Total AI Cost: </span>
-                    <span class="metric-value">
-                        ${self.cost_analysis['total_usd']:.2f}
-                    </span>
-                    <span> (avg: ${self.cost_analysis['avg_per_email']:.3f} per email)</span>
-                </div>
-            </div>
+                <div class="content-wrapper">
+                    <div class="summary">
+                        <h2>Summary</h2>
+                        <div class="metric">
+                            <span class="metric-label">Total Emails Processed:</span>
+                            <span class="metric-value">{self.prod_email_count}</span>
+                            <span style="color:#888;">(excluding {self.test_emails} test emails)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Success Rate:</span>
+                            <span class="metric-value {'success' if (self.prod_email_count > 0 and (self.successful_emails / self.prod_email_count) * 100 >= 95) else 'warning' if (self.prod_email_count > 0 and (self.successful_emails / self.prod_email_count) * 100 >= 90) else 'error'}">
+                                {((self.successful_emails / self.prod_email_count) * 100 if self.prod_email_count else 0.0):.1f}%
+                            </span>
+                            <span style="color:#888;">({self.successful_emails} successful, {self.failed_emails} failed)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Autoresponse Success Rate:</span>
+                            <span class="metric-value {'success' if (self.prod_email_count > 0 and (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 95) else 'warning' if (self.prod_email_count > 0 and (self.autoresponse_stats['success'] / self.prod_email_count) * 100 >= 90) else 'error'}">
+                                {((self.autoresponse_stats['success'] / self.prod_email_count) * 100 if self.prod_email_count else 0.0):.1f}%
+                            </span>
+                            <span style="color:#888;">({self.autoresponse_stats['success']} successful, {self.autoresponse_stats['failed']} failed)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Average Processing Time:</span>
+                            <span class="metric-value">{self.avg_processing_time:.2f} seconds</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Total AI Tokens Used:</span>
+                            <span class="metric-value">{self.token_usage['total']:,}</span>
+                            <span style="color:#888;">(avg: {self.token_usage['avg_per_email']:.1f} per email)</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Approximate AI Cost:</span>
+                            <span class="metric-value">${self.cost_analysis['total_usd']:.2f}</span>
+                            <span style="color:#888;">(avg: ${self.cost_analysis['avg_per_email']:.3f} per email)</span>
+                        </div>
+                    </div>
         """
         
         # Add alerts if any
         if self.alerts:
             html += """
-            <div class="alerts">
-                <h2>⚠️ Alerts Requiring Attention</h2>
+                    <div class="alerts">
+                        <h2>⚠️ Alerts Requiring Attention</h2>
             """
             
             for alert in self.alerts:
                 if alert['level'] == 'CRITICAL':
                     html += f"""
-                    <div class="alert-critical">
-                        <h3>CRITICAL: {alert['message']}</h3>
-                        <p>{alert['details']}</p>
-                    </div>
+                        <div class="alert-critical">
+                            <h3>CRITICAL: {alert['message']}</h3>
+                            <p>{alert['details']}</p>
+                        </div>
                     """
                 elif alert['level'] == 'WARNING':
                     html += f"""
-                    <div class="alert-warning">
-                        <h3>WARNING: {alert['message']}</h3>
-                        <p>{alert['details']}</p>
-                    </div>
+                        <div class="alert-warning">
+                            <h3>WARNING: {alert['message']}</h3>
+                            <p>{alert['details']}</p>
+                        </div>
                     """
                 else:
                     html += f"""
-                    <div class="alert-info">
-                        <h3>INFO: {alert['message']}</h3>
-                        <p>{alert['details']}</p>
-                    </div>
+                        <div class="alert-info">
+                            <h3>INFO: {alert['message']}</h3>
+                            <p>{alert['details']}</p>
+                        </div>
                     """
             
-            html += "</div>"
+            html += """
+                    </div>
+            """
         
         # Add recommendations if any
         if self.recommendations:
             html += """
-            <div class="recommendations">
-                <h2>📋 Recommendations</h2>
+                    <div class="recommendations">
+                        <h2>📋 Recommendations</h2>
             """
             
             for rec in self.recommendations:
                 html += f"""
-                <div class="metric">
-                    <h3>{rec['category']}: {rec['message']}</h3>
-                    <p>{rec['details']}</p>
-                </div>
+                        <div class="recommendation-item">
+                            <b>{rec['category']}:</b> {rec['message']}
+                            <div style="color:#3a3a3a; font-weight:400; margin-top:8px;">{rec['details']}</div>
+                        </div>
                 """
             
-            html += "</div>"
+            html += """
+                    </div>
+            """
         
-        # Add charts
+        # Add charts in a grid layout
         html += """
-        <h2>📊 Performance Charts</h2>
-        <div class="charts">
+                    <div class="charts-section">
+                        <h2>📊 Performance Charts</h2>
+                        <div class="charts-grid">
         """
-        
-        # Add hourly volume chart
+
+        # First row: Email Volume by Hour and Email Distribution by Category
+        html += '<div class="charts-row">'
         if 'hourly_volume' in self.charts:
             chart_base64 = base64.b64encode(self.charts['hourly_volume']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Email Volume by Hour</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Email Volume by Hour">
-            </div>
+                            <div class="chart">
+                                <h3>Email Volume by Hour</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Email Volume by Hour">
+                            </div>
             """
-        
-        # Add category distribution chart
         if 'category_distribution' in self.charts:
             chart_base64 = base64.b64encode(self.charts['category_distribution']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Email Distribution by Category</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Email Distribution by Category">
-            </div>
+                            <div class="chart">
+                                <h3>Email Distribution by Category</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Email Distribution by Category">
+                            </div>
             """
-        
-        # Add success rate chart
+        html += '</div>'
+
+        # Second row: Success Rate Pie and Autoresponse Pie
+        html += '<div class="charts-row">'
         if 'success_rate' in self.charts:
             chart_base64 = base64.b64encode(self.charts['success_rate']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Email Processing Success Rate</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Email Processing Success Rate">
-            </div>
+                            <div class="chart">
+                                <h3>Email Processing Success Rate</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Email Processing Success Rate">
+                            </div>
             """
-        
-        # Add autoresponse status chart
         if 'autoresponse_status' in self.charts:
             chart_base64 = base64.b64encode(self.charts['autoresponse_status']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Autoresponse Status</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Autoresponse Status">
-            </div>
+                            <div class="chart">
+                                <h3>Autoresponse Status</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Autoresponse Status">
+                            </div>
             """
-        
-        # Add error distribution chart if it exists
-        if 'error_distribution' in self.charts:
-            chart_base64 = base64.b64encode(self.charts['error_distribution']).decode('utf-8')
-            html += f"""
-            <div class="chart">
-                <h3>Error Distribution</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Error Distribution">
-            </div>
-            """
-        
-        # Add processing time chart if it exists
+        html += '</div>'
+
+        # Third row: Average Processing Time by Category (alone, but same structure)
         if 'processing_time' in self.charts:
+            html += '<div class="charts-row">'
             chart_base64 = base64.b64encode(self.charts['processing_time']).decode('utf-8')
             html += f"""
-            <div class="chart">
-                <h3>Average Processing Time by Category</h3>
-                <img src="data:image/png;base64,{chart_base64}" alt="Average Processing Time by Category">
-            </div>
+                            <div class="chart">
+                                <h3>Average Processing Time by Category</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Average Processing Time by Category">
+                            </div>
             """
-        
-        html += "</div>"  # Close charts div
+            html += '</div>'
+
+        # Error distribution (optional)
+        if 'error_distribution' in self.charts:
+            html += '<div class="charts-row">'
+            chart_base64 = base64.b64encode(self.charts['error_distribution']).decode('utf-8')
+            html += f"""
+                            <div class="chart">
+                                <h3>Error Distribution</h3>
+                                <img src="data:image/png;base64,{chart_base64}" alt="Error Distribution">
+                            </div>
+            """
+            html += '</div>'
+
+        html += """
+                        </div>
+                    </div>
+        """
         
         # Add detailed stats
         html += """
-        <h2>📈 Detailed Statistics</h2>
-        
-        <h3>Category Statistics</h3>
-        <table>
-            <tr>
-                <th>Category</th>
-                <th>Count</th>
-                <th>Percentage</th>
-                <th>Avg. Processing Time (s)</th>
-            </tr>
+                    <div class="stats-section">
+                        <h2>📈 Detailed Statistics</h2>
+                        
+                        <h3>Category Statistics</h3>
+                        <table>
+                            <tr>
+                                <th>Category</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                                <th>Avg. Processing Time (s)</th>
+                            </tr>
         """
         
         # Add category statistics
@@ -734,24 +1034,24 @@ class DailyReport:
             avg_time = self.avg_processing_by_category.get(category, 0)
             
             html += f"""
-            <tr>
-                <td>{category}</td>
-                <td>{count}</td>
-                <td>{percentage:.1f}%</td>
-                <td>{avg_time:.2f}s</td>
-            </tr>
+                            <tr>
+                                <td>{category}</td>
+                                <td>{count}</td>
+                                <td>{percentage:.1f}%</td>
+                                <td>{avg_time:.2f}s</td>
+                            </tr>
             """
         
         html += """
-        </table>
-        
-        <h3>Hourly Volume</h3>
-        <table>
-            <tr>
-                <th>Hour</th>
-                <th>Number of Emails</th>
-                <th>Percentage</th>
-            </tr>
+                        </table>
+                        
+                        <h3>Hourly Volume</h3>
+                        <table>
+                            <tr>
+                                <th>Hour</th>
+                                <th>Number of Emails</th>
+                                <th>Percentage</th>
+                            </tr>
         """
         
         # Add hourly statistics
@@ -760,33 +1060,37 @@ class DailyReport:
             percentage = (count / self.prod_email_count) * 100 if self.prod_email_count else 0
             
             html += f"""
-            <tr>
-                <td>{hour:02d}:00 - {hour:02d}:59</td>
-                <td>{count}</td>
-                <td>{percentage:.1f}%</td>
-            </tr>
+                            <tr>
+                                <td>{hour:02d}:00 - {hour:02d}:59</td>
+                                <td>{count}</td>
+                                <td>{percentage:.1f}%</td>
+                            </tr>
             """
         
-        html += "</table>"
+        html += """
+                        </table>
+                    </div>
+        """
         
         # Add failures section if there are any
         if self.failed_emails > 0:
             html += """
-            <h2>❌ Failures</h2>
-            <div class="failure-details">
+                    <div class="failure-section">
+                        <h2>❌ Failures</h2>
+                        <div class="failure-details">
             """
             
             # Classification failures
             if self.classification_failures:
                 html += f"""
-                <h3>Classification Failures ({len(self.classification_failures)})</h3>
-                <table>
-                    <tr>
-                        <th>Subject</th>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Error</th>
-                    </tr>
+                            <h3>Classification Failures ({len(self.classification_failures)})</h3>
+                            <table>
+                                <tr>
+                                    <th>Subject</th>
+                                    <th>Time</th>
+                                    <th>Status</th>
+                                    <th>Error</th>
+                                </tr>
                 """
                 
                 for failure in self.classification_failures[:10]:  # Show first 10
@@ -805,34 +1109,36 @@ class DailyReport:
                         error = str(error)[:100] + "..."
                     
                     html += f"""
-                    <tr>
-                        <td>{subject}</td>
-                        <td>{time}</td>
-                        <td>{status}</td>
-                        <td>{error}</td>
-                    </tr>
+                                <tr>
+                                    <td>{subject}</td>
+                                    <td>{time}</td>
+                                    <td>{status}</td>
+                                    <td>{error}</td>
+                                </tr>
                     """
                 
                 if len(self.classification_failures) > 10:
                     html += f"""
-                    <tr>
-                        <td colspan="4">... and {len(self.classification_failures) - 10} more failures</td>
-                    </tr>
+                                <tr>
+                                    <td colspan="4">... and {len(self.classification_failures) - 10} more failures</td>
+                                </tr>
                     """
                 
-                html += "</table>"
+                html += """
+                            </table>
+                """
             
             # Routing failures
             if self.routing_failures:
                 html += f"""
-                <h3>Routing Failures ({len(self.routing_failures)})</h3>
-                <table>
-                    <tr>
-                        <th>Subject</th>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Destination</th>
-                    </tr>
+                            <h3>Routing Failures ({len(self.routing_failures)})</h3>
+                            <table>
+                                <tr>
+                                    <th>Subject</th>
+                                    <th>Time</th>
+                                    <th>Status</th>
+                                    <th>Destination</th>
+                                </tr>
                 """
                 
                 for failure in self.routing_failures[:10]:  # Show first 10
@@ -849,33 +1155,35 @@ class DailyReport:
                         subject = str(subject)[:50] + "..."
                     
                     html += f"""
-                    <tr>
-                        <td>{subject}</td>
-                        <td>{time}</td>
-                        <td>{status}</td>
-                        <td>{destination}</td>
-                    </tr>
+                                <tr>
+                                    <td>{subject}</td>
+                                    <td>{time}</td>
+                                    <td>{status}</td>
+                                    <td>{destination}</td>
+                                </tr>
                     """
                 
                 if len(self.routing_failures) > 10:
                     html += f"""
-                    <tr>
-                        <td colspan="4">... and {len(self.routing_failures) - 10} more failures</td>
-                    </tr>
+                                <tr>
+                                    <td colspan="4">... and {len(self.routing_failures) - 10} more failures</td>
+                                </tr>
                     """
                 
-                html += "</table>"
+                html += """
+                            </table>
+                """
             
             # Autoresponse failures
             if self.autoresponse_failures:
                 html += f"""
-                <h3>Autoresponse Failures ({len(self.autoresponse_failures)})</h3>
-                <table>
-                    <tr>
-                        <th>Subject</th>
-                        <th>Time</th>
-                        <th>Sender</th>
-                    </tr>
+                            <h3>Autoresponse Failures ({len(self.autoresponse_failures)})</h3>
+                            <table>
+                                <tr>
+                                    <th>Subject</th>
+                                    <th>Time</th>
+                                    <th>Sender</th>
+                                </tr>
                 """
                 
                 for failure in self.autoresponse_failures[:10]:  # Show first 10
@@ -891,29 +1199,138 @@ class DailyReport:
                         subject = str(subject)[:50] + "..."
                     
                     html += f"""
-                    <tr>
-                        <td>{subject}</td>
-                        <td>{time}</td>
-                        <td>{sender}</td>
-                    </tr>
+                                <tr>
+                                    <td>{subject}</td>
+                                    <td>{time}</td>
+                                    <td>{sender}</td>
+                                </tr>
                     """
                 
                 if len(self.autoresponse_failures) > 10:
                     html += f"""
-                    <tr>
-                        <td colspan="3">... and {len(self.autoresponse_failures) - 10} more failures</td>
-                    </tr>
+                                <tr>
+                                    <td colspan="3">... and {len(self.autoresponse_failures) - 10} more failures</td>
+                                </tr>
                     """
                 
-                html += "</table>"
+                html += """
+                            </table>
+                """
             
-            html += "</div>"  # Close failure-details
+            html += """
+                        </div>
+                    </div>
+            """
         
-        # Close HTML
+        # Add a message if there were no production emails processed
+        if self.prod_email_count == 0:
+            html += """
+                    <div class="no-emails-alert">
+                        <h2>ℹ️ No Emails Processed</h2>
+                        <div class="alert-info">
+                            <h3>No production emails were processed for this date.</h3>
+                            <p>The system did not process any emails on this day. This could be due to no incoming emails or a possible upstream issue.</p>
+                        </div>
+                    </div>
+            """
+        
+        # Add detailed failures section (sender, recipient, subject, routed_to) - REMOVED BODY FIELD
         html += """
-        <div style="margin-top: 30px; padding-top: 10px; border-top: 1px solid #ddd; color: #777; font-size: 0.9em;">
-            <p>This is an automated report from the APEX Email Triaging System.</p>
-        </div>
+                    <div class="failure-section">
+                        <h2>❌ Detailed Failure Information</h2>
+                        <div class="failure-details">
+        """
+
+        # Gather all failures (classification, routing, read status, autoresponse)
+        all_failures = (
+            self.classification_failures +
+            self.routing_failures +
+            self.read_status_failures +
+            self.autoresponse_failures
+        )
+
+        # Remove duplicates (in case an email failed multiple steps)
+        seen_ids = set()
+        unique_failures = []
+        for email in all_failures:
+            key = (
+                str(email.get('eml_sub', '')),
+                str(email.get('eml_frm', '')),
+                str(email.get('eml_to', '')),
+                str(email.get('dttm_proc', ''))
+            )
+            if key not in seen_ids:
+                seen_ids.add(key)
+                unique_failures.append(email)
+
+        if unique_failures:
+            html += """
+                            <table>
+                                <tr>
+                                    <th>Sender</th>
+                                    <th>Recipient</th>
+                                    <th>Subject</th>
+                                    <th>Routed To</th>
+                                </tr>
+            """
+            for failure in unique_failures:
+                sender = failure.get('eml_frm', 'N/A')
+                recipient = failure.get('eml_to', 'N/A')
+                subject = failure.get('eml_sub', 'N/A')
+                routed_to = failure.get('apex_routed_to', 'N/A')
+
+                # Truncate long fields for readability
+                if len(str(subject)) > 80:
+                    subject = str(subject)[:80] + "..."
+                if len(str(routed_to)) > 80:
+                    routed_to = str(routed_to)[:80] + "..."
+
+                html += f"""
+                                <tr>
+                                    <td>{sender}</td>
+                                    <td>{recipient}</td>
+                                    <td>{subject}</td>
+                                    <td>{routed_to}</td>
+                                </tr>
+                """
+            html += """
+                            </table>
+            """
+        else:
+            html += """
+                            <p>No failures to display.</p>
+            """
+
+        html += """
+                        </div>
+                    </div>
+        """
+        
+        # Support information section
+        html += """
+                    <div class="support-info">
+                        <h3>Need Support?</h3>
+                        <p>Should you have any concerns related to the performance of the APEX Email Triaging System as per the performance stats above, please log a SysAid Incident immediately so that the AI Center of Excellence can investigate further.</p>
+                        
+                        <p>Use the following link to log a SysAid Incident: <a href="{os.environ.get('incident_link')}">SysAid Portal</a></p>
+                        
+                        <p>Follow these steps to log a SysAid Incident:</p>
+                        <ol>
+                            <li>Click on the "Submit an Incident" button</li>
+                            <li>Select the category -> <b>AI Centre of Excellence</b></li>
+                            <li>Select the sub-category -> <b>Email Triaging (APEX)</b></li>
+                            <li>Select third level category -> <b>Report an issue</b></li>
+                            <li>Provide a description of the incident/issue.</li>
+                            <li>Click on the "Submit" button to log the incident.</li>
+                        </ol>
+                        <p>Thank you for your cooperation.</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>This is an automated report from the APEX Email Triaging System.</p>
+                    </div>
+                </div>
+            </div>
         </body>
         </html>
         """
@@ -1069,20 +1486,23 @@ async def send_report_email(html_report, csv_report, report_recipients, report_d
         # Format date for email subject
         date_str = report_date.strftime('%Y-%m-%d')
         
-        # Set up email subject
-        subject = f"APEX Daily Performance Report - {date_str}"
+        # Set up email subject with a professional title
+        base_subject = f"[APEX Email Triaging] Daily Performance Report - {date_str}"
+        subject = base_subject
         
         # Check if there are any critical alerts
         has_critical_alerts = any(alert['level'] == 'CRITICAL' for alert in report.alerts)
         has_warnings = any(alert['level'] == 'WARNING' for alert in report.alerts)
         
         # Add alerts to the subject
-        if has_critical_alerts:
-            subject = f"🚨 {subject} - CRITICAL ISSUES DETECTED"
+        if report.prod_email_count == 0:
+            subject = f"ℹ️ {base_subject} - No Emails Processed"
+        elif has_critical_alerts:
+            subject = f"🚨 {base_subject} - CRITICAL ISSUES DETECTED"
         elif has_warnings:
-            subject = f"⚠️ {subject} - Warnings Present"
+            subject = f"⚠️ {base_subject} - Warnings Present"
         elif report.successful_emails == report.prod_email_count and report.prod_email_count > 0:
-            subject = f"✅ {subject} - All Systems Normal"
+            subject = f"✅ {base_subject} - All Systems Normal"
         
         # Create message for Microsoft Graph API
         message = {
@@ -1200,13 +1620,14 @@ async def main():
         
         # Save reports locally if needed
         date_str = report_date.strftime('%Y-%m-%d')
-        with open(f"APEX_Daily_Report_{date_str}.html", "w", encoding="utf-8") as f:
-            f.write(html_report)
-        
-        with open(f"APEX_Daily_Report_{date_str}.csv", "wb") as f:
-            f.write(csv_report)
-            
-        print(f"Reports saved to APEX_Daily_Report_{date_str}.html and APEX_Daily_Report_{date_str}.csv")
+        # Remove or comment out the following lines to avoid saving files locally
+        # with open(f"APEX_Daily_Report_{date_str}.html", "w", encoding="utf-8") as f:
+        #     f.write(html_report)
+        # 
+        # with open(f"APEX_Daily_Report_{date_str}.csv", "wb") as f:
+        #     f.write(csv_report)
+        #
+        # print(f"Reports saved to APEX_Daily_Report_{date_str}.html and APEX_Daily_Report_{date_str}.csv")
         
         # Send the report via email if recipients are specified
         if report_recipients:
@@ -1235,12 +1656,50 @@ async def main():
                 <head>
                     <meta charset="UTF-8">
                     <title>APEX Daily Report Error</title>
+                    <style>
+                        body {{
+                            font-family: 'Segoe UI', Arial, sans-serif;
+                            line-height: 1.6;
+                            color: #333;
+                            max-width: 800px;
+                            margin: 20px auto;
+                            padding: 20px;
+                        }}
+                        h1 {{
+                            color: #e74c3c;
+                            border-bottom: 1px solid #eee;
+                            padding-bottom: 10px;
+                        }}
+                        pre {{
+                            white-space: pre-wrap;
+                            word-wrap: break-word;
+                            padding: 15px;
+                            border-radius: 5px;
+                            margin: 15px 0;
+                        }}
+                        .error-message {{
+                            background-color: #f8d7da;
+                            padding: 15px;
+                            border-radius: 5px;
+                            margin-bottom: 20px;
+                        }}
+                        .error-trace {{
+                            background-color: #f8f9fa;
+                            padding: 15px;
+                            border-radius: 5px;
+                            max-height: 400px;
+                            overflow-y: auto;
+                            font-size: 14px;
+                            border: 1px solid #eee;
+                        }}
+                    </style>
                 </head>
                 <body>
                     <h1>❌ APEX Daily Performance Report Failed</h1>
                     <p>The daily performance report script encountered an error:</p>
-                    <pre style="background-color: #f8d7da; padding: 15px; border-radius: 5px;">{error_msg}</pre>
-                    <pre style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; max-height: 400px; overflow-y: auto;">{traceback.format_exc()}</pre>
+                    <div class="error-message">{error_msg}</div>
+                    <h2>Error Details</h2>
+                    <div class="error-trace">{traceback.format_exc()}</div>
                 </body>
                 </html>
                 """
