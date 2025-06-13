@@ -104,7 +104,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
             'mailer-daemon', 'postmaster', 'daemon', 'mail-daemon',
             'microsoftexchange', 'exchange', 'outlook-com', 
             'auto-reply', 'autoreply', 'bounce', 'delivery',
-            'system', 'administrator', 'admin', 'notification'
+            'system', 'noresponse', 'no-response'
         ]
         
         # Check if sender contains any system indicators
@@ -160,7 +160,6 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
             autoresponse_indicators = [
                 'thank you for contacting us', 'auto response', 'automatic response',
                 'we have received your email', 'automated reply', 'auto-reply',
-                'acknowledgment', 'receipt confirmation'
             ]
             
             for indicator in autoresponse_indicators:
