@@ -22,53 +22,166 @@ from config import (
 # If not defined in config.py, use the empty mapping
 DEFAULT_EMAIL_TO_FOLDER_MAPPING = {}
 
-def should_skip_autoresponse(recipient_email, sender_email):
+def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_body=None):
     """
     Determine if autoresponse should be skipped to prevent infinite loops.
+    Enhanced with comprehensive bounce/error message detection.
+    
+    IMPORTANT: This function assumes that the account processing emails (recipient_email) 
+    is the same account that sends autoresponses.
     
     Args:
         recipient_email (str): Email address where the original email was sent to
         sender_email (str): Email address of the original sender
+        subject (str): Email subject line (optional but recommended)
+        email_body (str): Email body content (optional but recommended)
         
     Returns:
         tuple: (should_skip: bool, reason: str) - True if autoresponse should be skipped
     """
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
-    # Skip if sender email is empty or appears to be a system address
-    if not sender_email or any(system_domain in sender_email.lower() for system_domain in ['noreply', 'no-reply', 'donotreply', 'mailer-daemon']):
-        return True, f"System/no-reply sender address: {sender_email}"
-    
-    # Skip if no recipient email
-    if not recipient_email:
-        return True, "No recipient email found"
-    
-    # LOOP PREVENTION: Skip if email was sent TO any of the configured autoresponse accounts
-    # This prevents infinite loops when autoresponse systems communicate with each other
-    if EMAIL_ACCOUNTS:
-        for account in EMAIL_ACCOUNTS:
-            if account and recipient_email.lower().strip() == account.lower().strip():
-                return True, f"Email sent directly to autoresponse account: {recipient_email}"
-    
-    # Additional loop prevention: Check if sender is also in EMAIL_ACCOUNTS
-    # This handles cases where internal accounts might trigger autoresponses to each other
-    if EMAIL_ACCOUNTS:
-        for account in EMAIL_ACCOUNTS:
-            if account and sender_email.lower().strip() == account.lower().strip():
-                return True, f"Sender is also an autoresponse account: {sender_email}"
-    
-    # Check for autoresponse headers/subjects that indicate this might be an autoresponse loop
-    autoresponse_indicators = [
-        'auto-reply', 'auto reply', 'automatic reply', 'out of office', 
-        'vacation', 'away message', 'delivery status notification',
-        'undelivered mail returned to sender', 'mail delivery failed',
-        'thank you for contacting us', 'auto response'
-    ]
-    
-    # Note: We could check the subject line here, but that might be too restrictive
-    # since legitimate emails might contain these phrases
-    
-    return False, "Autoresponse allowed"
+    try:
+        # 1. BASIC VALIDATION - Skip if sender email is empty
+        if not sender_email:
+            return True, "No sender email found"
+        
+        # 2. BASIC VALIDATION - Skip if no recipient email
+        if not recipient_email:
+            return True, "No recipient email found"
+        
+        # Clean up email addresses for comparison
+        sender_clean = sender_email.lower().strip()
+        recipient_clean = recipient_email.lower().strip()
+        
+        # DEBUG LOGGING - Add comprehensive logging for troubleshooting
+        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+              f"ANALYZING: FROM='{sender_email}' TO='{recipient_email}' SUBJECT='{subject}'")
+        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+              f"EMAIL_ACCOUNTS: {EMAIL_ACCOUNTS}")
+        
+        # 3. PRIMARY LOOP PREVENTION - Skip if email was sent TO any autoresponse account
+        # This should catch emails sent to autoresponse account
+        if EMAIL_ACCOUNTS:
+            for account in EMAIL_ACCOUNTS:
+                if account:
+                    account_clean = account.lower().strip()
+                    print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+                          f"COMPARING recipient '{recipient_clean}' with account '{account_clean}'")
+                    if recipient_clean == account_clean:
+                        return True, f"Email sent directly to autoresponse account: {recipient_email}"
+        
+        # 4. SECONDARY LOOP PREVENTION - Skip if sender is also an autoresponse account
+        if EMAIL_ACCOUNTS:
+            for account in EMAIL_ACCOUNTS:
+                if account:
+                    account_clean = account.lower().strip()
+                    if sender_clean == account_clean:
+                        return True, f"Sender is also an autoresponse account: {sender_email}"
+        
+        # 5. MICROSOFT EXCHANGE SYSTEM DETECTION - Primary defense against bounce loops
+        # Microsoft Exchange generates addresses like: MicrosoftExchange329e71ec88ae4615bbc36ab6ce41109e@company.co.za
+        exchange_patterns = [
+            r'microsoftexchange[a-f0-9]+@',  # Standard Exchange pattern
+            r'exchange[a-f0-9]+@',          # Alternative Exchange pattern
+            r'[a-f0-9]{32}@'                # Generic 32-character hex @ domain
+        ]
+        
+        for pattern in exchange_patterns:
+            if re.search(pattern, sender_clean):
+                return True, f"Microsoft Exchange system sender detected: {sender_email} (matches pattern '{pattern}')"
+        
+        # 6. SYSTEM ADDRESS DETECTION - Enhanced list including Exchange-specific terms
+        system_indicators = [
+            'noreply', 'no-reply', 'donotreply', 'do-not-reply',
+            'mailer-daemon', 'postmaster', 'daemon', 'mail-daemon',
+            'microsoftexchange', 'exchange', 'outlook-com', 
+            'auto-reply', 'autoreply', 'bounce', 'delivery',
+            'system', 'administrator', 'admin', 'notification'
+        ]
+        
+        # Check if sender contains any system indicators
+        for indicator in system_indicators:
+            if indicator in sender_clean:
+                return True, f"System/automated sender detected: {sender_email} (contains '{indicator}')"
+        
+        # 7. SUBJECT LINE ANALYSIS - Check for bounce/error indicators
+        if subject:
+            subject_clean = subject.lower().strip()
+            bounce_subject_indicators = [
+                'undeliverable', 'undelivered', 'delivery status notification', 
+                'delivery failure', 'mail delivery failed', 'returned mail', 
+                'bounce notification', 'message not delivered', 'delivery report', 
+                'non-delivery report', 'ndr', 'mail delivery subsystem', 
+                'postmaster notification', 'auto-reply', 'automatic reply', 
+                'out of office', 'mailbox full', 'user unknown', 
+                'address not found', 'relay access denied', 'message blocked',
+                'delivery incomplete', 'message rejected', 'smtp error'
+            ]
+            
+            for indicator in bounce_subject_indicators:
+                if indicator in subject_clean:
+                    return True, f"Bounce/error message detected in subject: '{subject}' (contains '{indicator}')"
+            
+            # Special check for subjects that start with common bounce prefixes
+            bounce_prefixes = ['undeliverable:', 'delivery failure:', 'returned mail:', 'ndr:']
+            for prefix in bounce_prefixes:
+                if subject_clean.startswith(prefix):
+                    return True, f"Bounce message detected by subject prefix: '{subject}' (starts with '{prefix}')"
+        
+        # 8. EMAIL BODY ANALYSIS - Check for common bounce message content
+        if email_body:
+            body_clean = email_body.lower().strip()
+            bounce_body_indicators = [
+                'rejected your message', 'message could not be delivered',
+                'recipient mailbox is full', 'user is over quota',
+                'address not found', 'user unknown', 'mailbox unavailable',
+                'delivery failed', 'permanent failure', 'temporary failure',
+                'bounce message', 'non-delivery report', 'postmaster',
+                'mail delivery subsystem', 'delivery status notification',
+                'smtp error', 'relay access denied', 'message blocked',
+                'mailbox does not exist', 'invalid recipient'
+            ]
+            
+            for indicator in bounce_body_indicators:
+                if indicator in body_clean:
+                    return True, f"Bounce/error message detected in body content (contains '{indicator}')"
+        
+        # 9. AUTORESPONSE LOOP DETECTION - Check for existing autoresponse indicators
+        if subject:
+            subject_clean = subject.lower().strip()
+            autoresponse_indicators = [
+                'thank you for contacting us', 'auto response', 'automatic response',
+                'we have received your email', 'automated reply', 'auto-reply',
+                'acknowledgment', 'receipt confirmation'
+            ]
+            
+            for indicator in autoresponse_indicators:
+                if indicator in subject_clean:
+                    return True, f"Potential autoresponse loop detected in subject: '{subject}' (contains '{indicator}')"
+        
+        # 10. DOMAIN-BASED SUSPICIOUS PATTERN DETECTION
+        if '@' in sender_email:
+            sender_domain = sender_email.split('@')[1].lower()
+            recipient_domain = recipient_email.split('@')[1].lower() if '@' in recipient_email else ''
+            
+            # Check for internal system communications (same domain, system-like sender)
+            if sender_domain == recipient_domain:
+                # If it's the same domain and has system characteristics, be extra cautious
+                if any(indicator in sender_clean for indicator in ['exchange', 'system', 'daemon', 'admin']):
+                    return True, f"Internal system communication detected: {sender_email} to {recipient_email}"
+        
+        # 11. DEBUGGING LOG - Always log what we're allowing for troubleshooting
+        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+              f"ALLOWING autoresponse: FROM={sender_email} TO={recipient_email} SUBJECT='{subject}'")
+        
+        return False, "Autoresponse allowed"
+        
+    except Exception as e:
+        # If there's any error in the analysis, err on the side of caution and skip autoresponse
+        error_msg = f"Error in autoresponse analysis: {str(e)}"
+        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - {error_msg}")
+        return True, error_msg
 
 async def get_template_from_blob(recipient_email):
     """
@@ -679,10 +792,10 @@ async def _send_email_fallback(access_token, account, to_email, subject, body_ht
 async def send_autoresponse(account, sender_email, email_subject, email_data):
     """
     Send an autoresponse email to the sender.
-    Enhanced with loop prevention to avoid infinite autoresponse cycles.
+    Enhanced with comprehensive loop prevention to avoid infinite autoresponse cycles.
     
     Args:
-        account (str): Email account to send from
+        account (str): Email account to send from (should match one in EMAIL_ACCOUNTS)
         sender_email (str): Email address to send autoresponse to
         email_subject (str): Original email subject
         email_data (dict): Original email data
@@ -696,14 +809,31 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
         # Get the recipient email (where the original email was sent to)
         recipient_email = email_data.get('to', '').split(',')[0].strip()
         
-        # LOOP PREVENTION: Check if we should skip sending autoresponse
-        should_skip, skip_reason = should_skip_autoresponse(recipient_email, sender_email)
+        # Get email body for enhanced analysis
+        email_body = email_data.get('body_text', '') or email_data.get('body_html', '')
+        
+        # DEBUG LOGGING - Log what we're about to check
+        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
+              f"CHECKING autoresponse eligibility: ACCOUNT={account} SENDER={sender_email} "
+              f"RECIPIENT={recipient_email} SUBJECT='{email_subject}'")
+        
+        # ENHANCED LOOP PREVENTION: Check if we should skip sending autoresponse
+        should_skip, skip_reason = should_skip_autoresponse(
+            recipient_email, 
+            sender_email, 
+            email_subject, 
+            email_body
+        )
+        
         if should_skip:
-            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - SKIPPING autoresponse: {skip_reason}")
+            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
+                  f"SKIPPING autoresponse: {skip_reason}")
             return False  # Return False to indicate no autoresponse was sent (not an error)
         
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Autoresponse allowed, proceeding...")
+        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
+              f"Autoresponse allowed, proceeding to send...")
             
+        # Continue with existing autoresponse logic...
         # Get access token for Microsoft Graph API
         access_token = await get_access_token()
         if not access_token:
@@ -742,7 +872,6 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
             template_folder = None  # No folder for default template
         
         # Process the template to replace variables and update image references
-        # THIS IS WHERE THE MAGIC HAPPENS - Image URLs get converted to blob storage URLs
         processed_template = await process_template(template_content, template_folder, email_data)
         
         # Create subject line for autoresponse using the new mapping
