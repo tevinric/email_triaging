@@ -27,8 +27,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
     Determine if autoresponse should be skipped to prevent infinite loops.
     Enhanced with comprehensive bounce/error message detection.
     
-    IMPORTANT: This function assumes that the account processing emails (recipient_email) 
-    is the same account that sends autoresponses.
+    IMPORTANT: This function assumes that the account processing emails (recipient_email) is the same account that sends autoresponses. This should be the case as the consolidation bin is used to send the autoresponses.
     
     Args:
         recipient_email (str): Email address where the original email was sent to
@@ -41,16 +40,20 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
     """
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
+    
+    ## IF any of the following loop check conditions are met, we return True to skip the autoresponse.
     try:
-        # 1. BASIC VALIDATION - Skip if sender email is empty
+        # 1. BASIC VALIDATION - Skip if sender email is empty - Not likely to happen but worthwhile checking
         if not sender_email:
+            # SKIPS autoresponse
             return True, "No sender email found"
         
-        # 2. BASIC VALIDATION - Skip if no recipient email
+        # 2. BASIC VALIDATION - Skip if no recipient email - Not likely to happen but worthwhile checking
         if not recipient_email:
+            # SKIPS autoresponse
             return True, "No recipient email found"
         
-        # Clean up email addresses for comparison
+        # Clean up email addresses for comparison - push to lower case and strip whitespace
         sender_clean = sender_email.lower().strip()
         recipient_clean = recipient_email.lower().strip()
         
@@ -61,22 +64,26 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
               f"EMAIL_ACCOUNTS: {EMAIL_ACCOUNTS}")
         
         # 3. PRIMARY LOOP PREVENTION - Skip if email was sent TO any autoresponse account
-        # This should catch emails sent to autoresponse account
+        # This should catch emails sent directly to autoresponse account - We should not send autoresponses since the customer should not be sending mails directly to the autoresponse account 
         if EMAIL_ACCOUNTS:
             for account in EMAIL_ACCOUNTS:
                 if account:
                     account_clean = account.lower().strip()
                     print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
                           f"COMPARING recipient '{recipient_clean}' with account '{account_clean}'")
+
+                    # CHECKING -> Was the email sent to the autoresponse account/ consolidation bin?
                     if recipient_clean == account_clean:
+                        # SKIPS autoresponse
                         return True, f"Email sent directly to autoresponse account: {recipient_email}"
         
-        # 4. SECONDARY LOOP PREVENTION - Skip if sender is also an autoresponse account
+        # 4. SECONDARY LOOP PREVENTION - Skip if sender is also an autoresponse account. Prevention againt self initiatied loops
         if EMAIL_ACCOUNTS:
             for account in EMAIL_ACCOUNTS:
                 if account:
                     account_clean = account.lower().strip()
                     if sender_clean == account_clean:
+                        # SKIPS autorespons
                         return True, f"Sender is also an autoresponse account: {sender_email}"
         
         # 5. MICROSOFT EXCHANGE SYSTEM DETECTION - Primary defense against bounce loops
