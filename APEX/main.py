@@ -48,6 +48,7 @@ async def process_email(access_token, account, email_data, message_id):
     with email_log_capture.capture_for_email(email_id, internet_message_id, subject):
         log = create_log(email_data)
         processed = False
+        system_log_inserted = False  # Track if system log has been inserted
         
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         email_log(f">> {timestamp} Processing email [Subject: {subject}] from {original_sender}")
@@ -59,8 +60,18 @@ async def process_email(access_token, account, email_data, message_id):
                 # Mark the email as read if it was already found in the database
                 try:
                     await mark_email_as_read(access_token, account, message_id)
+                    email_log(f">> {timestamp} Successfully marked already processed email as read [Subject: {subject}]")
                 except Exception as e:
                     email_log(f">> {timestamp} Failed to mark already processed email as read: {str(e)}")
+                
+                # NEW: Insert system logs for skipped emails too
+                try:
+                    await insert_system_log_to_db(email_id)
+                    system_log_inserted = True
+                    email_log(f">> {timestamp} System log inserted for already processed email [Subject: {subject}]")
+                except Exception as e:
+                    email_log(f">> {timestamp} Failed to insert system log for already processed email: {str(e)}")
+                
                 return
             
             # NEW CODE: Start autoresponse process concurrently
@@ -149,7 +160,12 @@ async def process_email(access_token, account, email_data, message_id):
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
-                                await insert_system_log_to_db(email_id)
+                                try:
+                                    await insert_system_log_to_db(email_id)
+                                    system_log_inserted = True
+                                    email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
+                                except Exception as e:
+                                    email_log(f">> {timestamp} Failed to insert system log: {str(e)}")
                                 
                                 processed = True
                                 email_log(f">> {timestamp} Successfully processed and marked as read [Subject: {subject}]")
@@ -188,7 +204,12 @@ async def process_email(access_token, account, email_data, message_id):
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
-                                await insert_system_log_to_db(email_id)
+                                try:
+                                    await insert_system_log_to_db(email_id)
+                                    system_log_inserted = True
+                                    email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
+                                except Exception as e:
+                                    email_log(f">> {timestamp} Failed to insert system log: {str(e)}")
                                 
                                 processed = True
                     else:
@@ -241,7 +262,12 @@ async def process_email(access_token, account, email_data, message_id):
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
-                                await insert_system_log_to_db(email_id)
+                                try:
+                                    await insert_system_log_to_db(email_id)
+                                    system_log_inserted = True
+                                    email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
+                                except Exception as e:
+                                    email_log(f">> {timestamp} Failed to insert system log: {str(e)}")
                                 
                                 processed = True
                                 
@@ -249,7 +275,7 @@ async def process_email(access_token, account, email_data, message_id):
                         else:
                             # Both primary and fallback forwarding failed
                             if not processed:
-                                await handle_error_logging(
+                                system_log_inserted = await handle_error_logging(
                                     log,
                                     f"Failed to forward to both {FORWARD_TO} and fallback {original_destination}",
                                     "Multiple forwarding failures",
@@ -311,19 +337,24 @@ async def process_email(access_token, account, email_data, message_id):
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
-                                await insert_system_log_to_db(email_id)
+                                try:
+                                    await insert_system_log_to_db(email_id)
+                                    system_log_inserted = True
+                                    email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
+                                except Exception as e:
+                                    email_log(f">> {timestamp} Failed to insert system log: {str(e)}")
                                 
                                 processed = True
                                 
                                 email_log(f">> {timestamp} Error recovery successful [Subject: {subject}]")
                         else:
                             if not processed:
-                                await handle_error_logging(log, original_destination, f"Failed in both primary processing and fallback forwarding: {str(e)}", start_time, subject, autoresponse_task, email_id)
+                                system_log_inserted = await handle_error_logging(log, original_destination, f"Failed in both primary processing and fallback forwarding: {str(e)}", start_time, subject, autoresponse_task, email_id)
                                 processed = True
                     except Exception as fallback_err:
                         email_log(f">> {timestamp} Error in fallback forwarding [Subject: {subject}]: {str(fallback_err)}")
                         if not processed:
-                            await handle_error_logging(log, original_destination, f"Complete failure - Primary error: {str(e)}, Fallback error: {str(fallback_err)}", start_time, subject, autoresponse_task, email_id)
+                            system_log_inserted = await handle_error_logging(log, original_destination, f"Complete failure - Primary error: {str(e)}, Fallback error: {str(fallback_err)}", start_time, subject, autoresponse_task, email_id)
                             processed = True
                     
             else:
@@ -333,7 +364,7 @@ async def process_email(access_token, account, email_data, message_id):
                 add_to_log("apex_intervention", "false", log)
                 
                 if not processed:
-                    await handle_apex_failure_logging(
+                    system_log_inserted = await handle_apex_failure_logging(
                         log, 
                         email_data, 
                         apex_response, 
@@ -374,12 +405,12 @@ async def process_email(access_token, account, email_data, message_id):
                             email_log(f">> {timestamp} Failed to mark as read in critical error recovery [Subject: {subject}]: {str(mark_err)}")
                             marked_as_read = False
                         
-                        await handle_error_logging(log, original_destination + " (critical recovery)", f"Critical error recovery successful: {str(e)}", start_time, subject, autoresponse_task, email_id)
+                        system_log_inserted = await handle_error_logging(log, original_destination + " (critical recovery)", f"Critical error recovery successful: {str(e)}", start_time, subject, autoresponse_task, email_id)
                         processed = True
                         
                         email_log(f">> {timestamp} Critical error recovery successful [Subject: {subject}]")
                     else:
-                        await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: All delivery attempts failed. Original error: {str(e)}", start_time, subject, autoresponse_task, email_id)
+                        system_log_inserted = await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: All delivery attempts failed. Original error: {str(e)}", start_time, subject, autoresponse_task, email_id)
                         processed = True
                         
                         email_log(f">> {timestamp} CRITICAL: All delivery attempts failed [Subject: {subject}]")
@@ -387,17 +418,27 @@ async def process_email(access_token, account, email_data, message_id):
                 email_log(f">> {timestamp} Final error recovery attempt failed [Subject: {subject}]: {str(final_err)}")
                 if not processed:
                     try:
-                        await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: Email could not be processed or forwarded. Original error: {str(e)}, Final error: {str(final_err)}", start_time, subject, autoresponse_task, email_id)
+                        system_log_inserted = await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: Email could not be processed or forwarded. Original error: {str(e)}, Final error: {str(final_err)}", start_time, subject, autoresponse_task, email_id)
                         processed = True
                     except Exception as log_err:
                         email_log(f">> {timestamp} Even logging failed [Subject: {subject}]: {str(log_err)}")
         
         # NEW: Clean up email log capture after processing
-        try:
-            email_log_capture.clear_email_logs(email_id)
-        except Exception as cleanup_err:
-            # Don't fail the whole process for cleanup errors
-            email_log(f">> {timestamp} Error cleaning up email logs [Subject: {subject}]: {str(cleanup_err)}")
+        finally:
+            # Ensure system logs are always inserted, even if there were critical errors
+            if not system_log_inserted:
+                try:
+                    await insert_system_log_to_db(email_id)
+                    email_log(f">> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} System log inserted in finally block [Subject: {subject}]")
+                except Exception as cleanup_err:
+                    email_log(f">> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Failed to insert system log in finally block [Subject: {subject}]: {str(cleanup_err)}")
+            
+            # Clean up email log capture memory
+            try:
+                email_log_capture.clear_email_logs(email_id)
+            except Exception as cleanup_err:
+                # Don't fail the whole process for cleanup errors
+                email_log(f">> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Error cleaning up email logs [Subject: {subject}]: {str(cleanup_err)}")
 
 async def handle_error_logging(log, forward_to, error_message, start_time, subject=None, autoresponse_task=None, email_id=None):
     """
@@ -413,10 +454,11 @@ async def handle_error_logging(log, forward_to, error_message, start_time, subje
         email_id: NEW - Email ID for system logging
         
     Returns:
-        None
+        bool: True if system log was inserted successfully
     """
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     subject_info = f"[Subject: {subject}] " if subject else ""
+    system_log_inserted = False
     
     try:
         log_apex_fail(log, error_message)
@@ -457,11 +499,18 @@ async def handle_error_logging(log, forward_to, error_message, start_time, subje
         
         # NEW: Insert system logs to database
         if email_id:
-            await insert_system_log_to_db(email_id)
+            try:
+                await insert_system_log_to_db(email_id)
+                system_log_inserted = True
+                email_log(f">> {timestamp} System log inserted successfully in error logging {subject_info}")
+            except Exception as e:
+                email_log(f">> {timestamp} Failed to insert system log in error logging {subject_info}: {str(e)}")
         
         email_log(f">> {timestamp} Error logged {subject_info}")
+        return system_log_inserted
     except Exception as e:
         email_log(f">> {timestamp} Failed to log error {subject_info}: {str(e)}")
+        return system_log_inserted
 
 async def handle_apex_failure_logging(log, email_data, apex_response, access_token, account, message_id, start_time, subject=None, autoresponse_task=None, email_id=None):
     """
@@ -480,10 +529,11 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
         email_id: NEW - Email ID for system logging
         
     Returns:
-        None
+        bool: True if system log was inserted successfully
     """
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     subject_info = f"[Subject: {subject}] " if subject else ""
+    system_log_inserted = False
     
     original_sender = email_data.get('from', '')
     original_destination = email_data.get('to', '')
@@ -548,16 +598,24 @@ async def handle_apex_failure_logging(log, email_data, apex_response, access_tok
             
             # NEW: Insert system logs to database
             if email_id:
-                await insert_system_log_to_db(email_id)
+                try:
+                    await insert_system_log_to_db(email_id)
+                    system_log_inserted = True
+                    email_log(f">> {timestamp} System log inserted successfully in APEX failure logging {subject_info}")
+                except Exception as e:
+                    email_log(f">> {timestamp} Failed to insert system log in APEX failure logging {subject_info}: {str(e)}")
             
             email_log(f">> {timestamp} Successfully forwarded to original destination despite APEX failure {subject_info}")
         else:
             # If even the fallback forwarding failed, log the error
-            await handle_error_logging(log, original_destination, f"Failed to forward to original destination after APEX failure: {apex_response['message']}", start_time, subject, autoresponse_task, email_id)
+            system_log_inserted = await handle_error_logging(log, original_destination, f"Failed to forward to original destination after APEX failure: {apex_response['message']}", start_time, subject, autoresponse_task, email_id)
+        
+        return system_log_inserted
             
     except Exception as e:
         email_log(f">> {timestamp} Error in handling APEX failure {subject_info}: {str(e)}")
-        await handle_error_logging(log, "DELIVERY FAILED", f"Failed to recover from APEX failure: {str(e)}", start_time, subject, autoresponse_task, email_id)
+        system_log_inserted = await handle_error_logging(log, "DELIVERY FAILED", f"Failed to recover from APEX failure: {str(e)}", start_time, subject, autoresponse_task, email_id)
+        return system_log_inserted
 
 async def process_batch():
     """
@@ -599,11 +657,29 @@ async def process_batch():
                     # gather with return_exceptions=True ensures the loop continues even if some tasks fail
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     
-                    # Check for exceptions in the results
+                    # Check for exceptions in the results and try to log basic info for failed emails
                     for idx, result in enumerate(results):
                         if isinstance(result, Exception):
-                            email_subject = batch[idx][0].get('subject', 'Unknown subject') if idx < len(batch) else 'Unknown'
-                            print(f">> {timestamp} Task for email [Subject: {email_subject}] raised exception: {str(result)}")
+                            try:
+                                email_subject = batch[idx][0].get('subject', 'Unknown subject') if idx < len(batch) else 'Unknown'
+                                email_id = batch[idx][0].get('email_id', '') if idx < len(batch) else ''
+                                internet_message_id = batch[idx][0].get('internet_message_id', '') if idx < len(batch) else ''
+                                
+                                print(f">> {timestamp} Task for email [Subject: {email_subject}] raised exception: {str(result)}")
+                                
+                                # Try to create a minimal system log for the failed email
+                                if email_id and internet_message_id:
+                                    try:
+                                        with email_log_capture.capture_for_email(email_id, internet_message_id, email_subject):
+                                            email_log(f">> {timestamp} CRITICAL ERROR: Email processing task failed with exception: {str(result)}")
+                                            email_log(f">> {timestamp} Email ID: {email_id}")
+                                            email_log(f">> {timestamp} Subject: {email_subject}")
+                                            await insert_system_log_to_db(email_id)
+                                            print(f">> {timestamp} Emergency system log created for failed email [Subject: {email_subject}]")
+                                    except Exception as emergency_log_err:
+                                        print(f">> {timestamp} Failed to create emergency system log for failed email: {str(emergency_log_err)}")
+                            except Exception as exception_handling_err:
+                                print(f">> {timestamp} Error handling task exception: {str(exception_handling_err)}")
                     
                     # Add a small delay between batches to avoid overwhelming the API
                     await asyncio.sleep(1)
