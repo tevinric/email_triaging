@@ -55,10 +55,12 @@ async def process_email(access_token, account, email_data, message_id):
         
         try:
             # First check if this email has already been processed to avoid duplicates
+            email_log(f">> {timestamp} Checking if email already processed [Subject: {subject}]")
             if await check_email_processed(email_data['internet_message_id']):
                 email_log(f">> {timestamp} Email already processed [Subject: {subject}]. Marking as read.")
                 # Mark the email as read if it was already found in the database
                 try:
+                    email_log(f">> {timestamp} Attempting to mark already processed email as read [Subject: {subject}]")
                     await mark_email_as_read(access_token, account, message_id)
                     email_log(f">> {timestamp} Successfully marked already processed email as read [Subject: {subject}]")
                 except Exception as e:
@@ -74,8 +76,11 @@ async def process_email(access_token, account, email_data, message_id):
                 
                 return
             
+            email_log(f">> {timestamp} Email not found in database, proceeding with processing [Subject: {subject}]")
+            
             # NEW CODE: Start autoresponse process concurrently
             # This will run in the background while the rest of the processing continues
+            email_log(f">> {timestamp} Starting autoresponse task concurrently [Subject: {subject}]")
             autoresponse_task = asyncio.create_task(
                 send_autoresponse(
                     account,
@@ -86,11 +91,14 @@ async def process_email(access_token, account, email_data, message_id):
             )
             
             # Concatenate email data for APEX processing
+            email_log(f">> {timestamp} Preparing email data for APEX classification [Subject: {subject}]")
             llm_text = " ".join([str(value) for key, value in email_data.items() if key != 'email_object'])
             
             # Get APEX classification - attempt to categorize the email
+            email_log(f">> {timestamp} Starting APEX classification [Subject: {subject}]")
             try:
                 apex_response = await apex_categorise(str(llm_text), subject)
+                email_log(f">> {timestamp} APEX classification completed [Subject: {subject}]")
             except Exception as e:
                 email_log(f">> {timestamp} Error in APEX categorization [Subject: {subject}]: {str(e)}")
                 # If categorization fails, prepare for fallback routing
@@ -98,22 +106,33 @@ async def process_email(access_token, account, email_data, message_id):
             
             if apex_response['response'] == '200':
                 # Successfully classified by APEX
+                email_log(f">> {timestamp} APEX classification successful [Subject: {subject}]")
+                email_log(f">> {timestamp} Classification result: {apex_response['message']['classification']} [Subject: {subject}]")
+                email_log(f">> {timestamp} Action required: {apex_response['message']['action_required']} [Subject: {subject}]")
+                email_log(f">> {timestamp} Sentiment: {apex_response['message']['sentiment']} [Subject: {subject}]")
                 sts_class = "success"
                 
                 try:
                     # Determine forwarding address based on classification
+                    email_log(f">> {timestamp} Determining forwarding address for classification: {apex_response['message']['classification']} [Subject: {subject}]")
                     if str(apex_response['message']['classification']).lower() in ang_routings.keys():
                         FORWARD_TO = ang_routings[str(apex_response['message']['classification']).lower()]
+                        email_log(f">> {timestamp} Found routing for classification '{apex_response['message']['classification']}' -> {FORWARD_TO} [Subject: {subject}]")
                     else:
                         email_log(f">> {timestamp} APEX classification '{apex_response['message']['classification']}' not found in routing table [Subject: {subject}]. Forwarding to original recipient.")
                         FORWARD_TO = original_destination
                     
                     # Log whether AI intervention occurred (changed the destination)
                     log_apex_intervention(log, original_destination, FORWARD_TO)
+                    if original_destination.lower() != FORWARD_TO.lower():
+                        email_log(f">> {timestamp} AI intervention: Routing changed from {original_destination} to {FORWARD_TO} [Subject: {subject}]")
+                    else:
+                        email_log(f">> {timestamp} No AI intervention: Email stays with original destination {original_destination} [Subject: {subject}]")
                     
                     email_log(f">> {timestamp} Forwarding to {FORWARD_TO} based on classification '{apex_response['message']['classification']}' [Subject: {subject}]")
                     
                     # Forward email to the determined address
+                    email_log(f">> {timestamp} Starting email forwarding process [Subject: {subject}]")
                     forward_success = await forward_email(
                         access_token, 
                         account, 
@@ -125,12 +144,16 @@ async def process_email(access_token, account, email_data, message_id):
                     )
                     
                     if forward_success:
+                        email_log(f">> {timestamp} Email forwarding successful to {FORWARD_TO} [Subject: {subject}]")
                         # Mark as read only if forwarding was successful
+                        email_log(f">> {timestamp} Attempting to mark email as read [Subject: {subject}]")
                         marked_as_read = await mark_email_as_read(access_token, account, message_id)
                         
                         if marked_as_read:
+                            email_log(f">> {timestamp} Email marked as read successfully [Subject: {subject}]")
                             # Only log if both forwarding and marking as read were successful
                             if not processed:  # Extra check to prevent duplicate logging
+                                email_log(f">> {timestamp} Starting database logging process [Subject: {subject}]")
                                 log_apex_success(apex_response, log)
                                 add_to_log("apex_routed_to", FORWARD_TO, log)
                                 add_to_log("sts_read_eml", "success", log)
@@ -141,12 +164,15 @@ async def process_email(access_token, account, email_data, message_id):
                                 tat = (end_time - start_time).total_seconds()
                                 add_to_log("tat", tat, log)
                                 add_to_log("end_time", end_time, log)
+                                email_log(f">> {timestamp} Processing time: {tat:.2f} seconds [Subject: {subject}]")
                                 
                                 # NEW CODE: Capture autoresponse result before logging to database
+                                email_log(f">> {timestamp} Checking autoresponse task status [Subject: {subject}]")
                                 try:
                                     # Wait for autoresponse task with a timeout (e.g., 10 seconds)
                                     autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
                                     add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                                    email_log(f">> {timestamp} Autoresponse task completed: {'success' if autoresponse_success else 'failed'} [Subject: {subject}]")
                                 except asyncio.TimeoutError:
                                     # If autoresponse is taking too long, assume it's still running in background
                                     # and mark as "pending" in the log
@@ -157,10 +183,12 @@ async def process_email(access_token, account, email_data, message_id):
                                     email_log(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
                                     add_to_log("auto_response_sent", "failed", log)
                                 
+                                email_log(f">> {timestamp} Inserting main log record to database [Subject: {subject}]")
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
                                 try:
+                                    email_log(f">> {timestamp} Inserting system log record to database [Subject: {subject}]")
                                     await insert_system_log_to_db(email_id)
                                     system_log_inserted = True
                                     email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
@@ -175,6 +203,7 @@ async def process_email(access_token, account, email_data, message_id):
                             
                             # Log even if we couldn't mark as read
                             if not processed:
+                                email_log(f">> {timestamp} Logging to database despite read failure [Subject: {subject}]")
                                 log_apex_success(apex_response, log)
                                 add_to_log("apex_routed_to", FORWARD_TO, log)
                                 add_to_log("sts_read_eml", "error", log)
@@ -185,12 +214,15 @@ async def process_email(access_token, account, email_data, message_id):
                                 tat = (end_time - start_time).total_seconds()
                                 add_to_log("tat", tat, log)
                                 add_to_log("end_time", end_time, log)
+                                email_log(f">> {timestamp} Processing time: {tat:.2f} seconds [Subject: {subject}]")
                                 
                                 # NEW CODE: Capture autoresponse result before logging to database
+                                email_log(f">> {timestamp} Checking autoresponse task status [Subject: {subject}]")
                                 try:
                                     # Wait for autoresponse task with a timeout (e.g., 10 seconds)
                                     autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
                                     add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                                    email_log(f">> {timestamp} Autoresponse task completed: {'success' if autoresponse_success else 'failed'} [Subject: {subject}]")
                                 except asyncio.TimeoutError:
                                     # If autoresponse is taking too long, assume it's still running in background
                                     # and mark as "pending" in the log
@@ -201,10 +233,12 @@ async def process_email(access_token, account, email_data, message_id):
                                     email_log(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
                                     add_to_log("auto_response_sent", "failed", log)
                                 
+                                email_log(f">> {timestamp} Inserting main log record to database [Subject: {subject}]")
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
                                 try:
+                                    email_log(f">> {timestamp} Inserting system log record to database [Subject: {subject}]")
                                     await insert_system_log_to_db(email_id)
                                     system_log_inserted = True
                                     email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
@@ -218,6 +252,7 @@ async def process_email(access_token, account, email_data, message_id):
                         
                         # Reset intervention flag for fallback routing
                         add_to_log("apex_intervention", "false", log)
+                        email_log(f">> {timestamp} Starting fallback forwarding to original destination: {original_destination} [Subject: {subject}]")
                         
                         fallback_success = await forward_email(
                             access_token,
@@ -230,9 +265,12 @@ async def process_email(access_token, account, email_data, message_id):
                         )
                         
                         if fallback_success:
+                            email_log(f">> {timestamp} Fallback forwarding successful [Subject: {subject}]")
+                            email_log(f">> {timestamp} Attempting to mark email as read after fallback [Subject: {subject}]")
                             marked_as_read = await mark_email_as_read(access_token, account, message_id)
                             
                             if not processed:
+                                email_log(f">> {timestamp} Logging fallback routing success to database [Subject: {subject}]")
                                 log_apex_success(apex_response, log)
                                 add_to_log("apex_routed_to", original_destination + " (fallback routing)", log)
                                 add_to_log("sts_read_eml", "success" if marked_as_read else "error", log)
@@ -243,12 +281,15 @@ async def process_email(access_token, account, email_data, message_id):
                                 tat = (end_time - start_time).total_seconds()
                                 add_to_log("tat", tat, log)
                                 add_to_log("end_time", end_time, log)
+                                email_log(f">> {timestamp} Processing time: {tat:.2f} seconds [Subject: {subject}]")
                                 
                                 # NEW CODE: Capture autoresponse result before logging to database
+                                email_log(f">> {timestamp} Checking autoresponse task status [Subject: {subject}]")
                                 try:
                                     # Wait for autoresponse task with a timeout (e.g., 10 seconds)
                                     autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
                                     add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                                    email_log(f">> {timestamp} Autoresponse task completed: {'success' if autoresponse_success else 'failed'} [Subject: {subject}]")
                                 except asyncio.TimeoutError:
                                     # If autoresponse is taking too long, assume it's still running in background
                                     # and mark as "pending" in the log
@@ -259,10 +300,12 @@ async def process_email(access_token, account, email_data, message_id):
                                     email_log(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
                                     add_to_log("auto_response_sent", "failed", log)
                                 
+                                email_log(f">> {timestamp} Inserting main log record to database [Subject: {subject}]")
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
                                 try:
+                                    email_log(f">> {timestamp} Inserting system log record to database [Subject: {subject}]")
                                     await insert_system_log_to_db(email_id)
                                     system_log_inserted = True
                                     email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
@@ -291,9 +334,11 @@ async def process_email(access_token, account, email_data, message_id):
                     
                     # Attempt fallback forwarding to original destination
                     try:
+                        email_log(f">> {timestamp} Starting error recovery process [Subject: {subject}]")
                         # No intervention in fallback case
                         add_to_log("apex_intervention", "false", log)
                         
+                        email_log(f">> {timestamp} Attempting fallback forwarding for error recovery [Subject: {subject}]")
                         fallback_success = await forward_email(
                             access_token,
                             account,
@@ -305,9 +350,12 @@ async def process_email(access_token, account, email_data, message_id):
                         )
                         
                         if fallback_success:
+                            email_log(f">> {timestamp} Error recovery forwarding successful [Subject: {subject}]")
+                            email_log(f">> {timestamp} Attempting to mark email as read after error recovery [Subject: {subject}]")
                             marked_as_read = await mark_email_as_read(access_token, account, message_id)
                             
                             if not processed:
+                                email_log(f">> {timestamp} Logging error recovery to database [Subject: {subject}]")
                                 log_apex_success(apex_response, log) if apex_response['response'] == '200' else log_apex_fail(log, str(e))
                                 add_to_log("apex_routed_to", original_destination + " (error recovery)", log)
                                 add_to_log("sts_read_eml", "success" if marked_as_read else "error", log)
@@ -318,12 +366,15 @@ async def process_email(access_token, account, email_data, message_id):
                                 tat = (end_time - start_time).total_seconds()
                                 add_to_log("tat", tat, log)
                                 add_to_log("end_time", end_time, log)
+                                email_log(f">> {timestamp} Processing time: {tat:.2f} seconds [Subject: {subject}]")
                                 
                                 # NEW CODE: Capture autoresponse result before logging to database
+                                email_log(f">> {timestamp} Checking autoresponse task status [Subject: {subject}]")
                                 try:
                                     # Wait for autoresponse task with a timeout (e.g., 10 seconds)
                                     autoresponse_success = await asyncio.wait_for(autoresponse_task, timeout=10.0)
                                     add_to_log("auto_response_sent", "success" if autoresponse_success else "failed", log)
+                                    email_log(f">> {timestamp} Autoresponse task completed: {'success' if autoresponse_success else 'failed'} [Subject: {subject}]")
                                 except asyncio.TimeoutError:
                                     # If autoresponse is taking too long, assume it's still running in background
                                     # and mark as "pending" in the log
@@ -334,10 +385,12 @@ async def process_email(access_token, account, email_data, message_id):
                                     email_log(f">> {timestamp} Error in autoresponse task [Subject: {subject}]: {str(e)}")
                                     add_to_log("auto_response_sent", "failed", log)
                                 
+                                email_log(f">> {timestamp} Inserting main log record to database [Subject: {subject}]")
                                 await insert_log_to_db(log)
                                 
                                 # NEW: Insert system logs to database
                                 try:
+                                    email_log(f">> {timestamp} Inserting system log record to database [Subject: {subject}]")
                                     await insert_system_log_to_db(email_id)
                                     system_log_inserted = True
                                     email_log(f">> {timestamp} System log inserted successfully [Subject: {subject}]")
@@ -360,10 +413,12 @@ async def process_email(access_token, account, email_data, message_id):
             else:
                 # APEX classification failed - implement fallback routing
                 email_log(f">> {timestamp} APEX classification failed [Subject: {subject}]. Implementing fallback routing.")
+                email_log(f">> {timestamp} APEX failure reason: {apex_response.get('message', 'Unknown error')} [Subject: {subject}]")
                 # No intervention when falling back to original destination
                 add_to_log("apex_intervention", "false", log)
                 
                 if not processed:
+                    email_log(f">> {timestamp} Starting APEX failure logging and fallback process [Subject: {subject}]")
                     system_log_inserted = await handle_apex_failure_logging(
                         log, 
                         email_data, 
@@ -385,9 +440,11 @@ async def process_email(access_token, account, email_data, message_id):
             try:
                 # Only attempt if we haven't processed yet
                 if not processed:
+                    email_log(f">> {timestamp} Starting critical error recovery [Subject: {subject}]")
                     # No intervention in critical error recovery
                     add_to_log("apex_intervention", "false", log)
                     
+                    email_log(f">> {timestamp} Attempting critical error recovery forwarding [Subject: {subject}]")
                     fallback_success = await forward_email(
                         access_token,
                         account,
@@ -399,7 +456,9 @@ async def process_email(access_token, account, email_data, message_id):
                     )
                     
                     if fallback_success:
+                        email_log(f">> {timestamp} Critical error recovery forwarding successful [Subject: {subject}]")
                         try:
+                            email_log(f">> {timestamp} Attempting to mark email as read after critical recovery [Subject: {subject}]")
                             marked_as_read = await mark_email_as_read(access_token, account, message_id)
                         except Exception as mark_err:
                             email_log(f">> {timestamp} Failed to mark as read in critical error recovery [Subject: {subject}]: {str(mark_err)}")
@@ -410,6 +469,7 @@ async def process_email(access_token, account, email_data, message_id):
                         
                         email_log(f">> {timestamp} Critical error recovery successful [Subject: {subject}]")
                     else:
+                        email_log(f">> {timestamp} Critical error recovery forwarding failed [Subject: {subject}]")
                         system_log_inserted = await handle_error_logging(log, "DELIVERY FAILED", f"CRITICAL: All delivery attempts failed. Original error: {str(e)}", start_time, subject, autoresponse_task, email_id)
                         processed = True
                         
@@ -673,7 +733,12 @@ async def process_batch():
                                         with email_log_capture.capture_for_email(email_id, internet_message_id, email_subject):
                                             email_log(f">> {timestamp} CRITICAL ERROR: Email processing task failed with exception: {str(result)}")
                                             email_log(f">> {timestamp} Email ID: {email_id}")
+                                            email_log(f">> {timestamp} Internet Message ID: {internet_message_id}")
                                             email_log(f">> {timestamp} Subject: {email_subject}")
+                                            email_log(f">> {timestamp} From: {batch[idx][0].get('from', 'Unknown sender') if idx < len(batch) else 'Unknown'}")
+                                            email_log(f">> {timestamp} To: {batch[idx][0].get('to', 'Unknown recipient') if idx < len(batch) else 'Unknown'}")
+                                            email_log(f">> {timestamp} Task exception type: {type(result).__name__}")
+                                            email_log(f">> {timestamp} Emergency system log created due to task failure")
                                             await insert_system_log_to_db(email_id)
                                             print(f">> {timestamp} Emergency system log created for failed email [Subject: {email_subject}]")
                                     except Exception as emergency_log_err:
