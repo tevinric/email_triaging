@@ -114,7 +114,9 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
         print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Error sending autoresponse: {str(e)}")
         import traceback
         print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Traceback: {traceback.format_exc()}")
-        return Falseasync def send_email(access_token, account, to_email, subject, body_html, body_text):
+        return False
+    
+async def send_email(access_token, account, to_email, subject, body_html, body_text):
     """
     Send a new email using Microsoft Graph API with enhanced encoding handling.
     Focus on proper delivery mechanism rather than content manipulation.
@@ -145,7 +147,9 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
         
     except Exception as e:
         print(f">> {timestamp} Script: autoresponse.py - Function: send_email - Error in send_email: {str(e)}")
-        return Falseasync def _send_email_fallback(access_token, account, to_email, subject, body_html, body_text, timestamp):
+        return False
+    
+async def _send_email_fallback(access_token, account, to_email, subject, body_html, body_text, timestamp):
     """
     Final fallback: Send with minimal processing.
     """
@@ -187,7 +191,9 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
     
     except Exception as e:
         print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - Exception: {str(e)}")
-        return Falseasync def _send_email_with_base64(access_token, account, to_email, subject, body_html, body_text, timestamp):
+        return False
+    
+async def _send_email_with_base64(access_token, account, to_email, subject, body_html, body_text, timestamp):
     """
     Second attempt: Send email with base64 encoded content to preserve encoding.
     """
@@ -238,7 +244,9 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
     
     except Exception as e:
         print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - Exception: {str(e)}")
-        return Falseasync def _send_email_with_charset(access_token, account, to_email, subject, body_html, body_text, timestamp):
+        return False
+    
+async def _send_email_with_charset(access_token, account, to_email, subject, body_html, body_text, timestamp):
     """
     First attempt: Send email with proper charset declarations and headers.
     """
@@ -310,7 +318,9 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
     
     except Exception as e:
         print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Exception: {str(e)}")
-        return Falseasync def process_template(template_content, template_folder, email_data):
+        return False
+
+async def process_template(template_content, template_folder, email_data):
     """
     Process the template by replacing variables with actual values and updating image references.
     IMPORTANT: Template is taken as-is with minimal manipulation per user requirements.
