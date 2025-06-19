@@ -7,11 +7,12 @@ from config import EMAIL_ACCOUNTS, EMAIL_FETCH_INTERVAL, DEFAULT_EMAIL_ACCOUNT
 from apex_llm.apex_logging import (
     create_log, add_to_log, log_apex_success, log_apex_fail, 
     insert_log_to_db, check_email_processed, log_apex_intervention,
-    email_log_capture, email_log, insert_system_log_to_db  # Import enhanced logging
+    email_log_capture, email_log, insert_system_log_to_db, log_skipped_email  # Import enhanced logging
 )
 import datetime
 from apex_llm.apex_routing import ang_routings
 from apex_llm.autoresponse import send_autoresponse 
+import re
 
 
 # Set to track emails that have been processed but not marked as read yet
@@ -61,8 +62,28 @@ async def process_email(access_token, account, email_data, message_id):
         try:
             # First check if this email has already been processed to avoid duplicates
             email_log(f">> {timestamp} Checking if email already processed [Subject: {subject}]")
+            
             if await check_email_processed(email_data['internet_message_id']):
+                
                 email_log(f">> {timestamp} Email already processed [Subject: {subject}]. Marking as read.")
+                
+                # Calculate the procssing time: 
+                processing_time = (datetime.datetime.now() - start_time).total_seconds()
+                
+                #Log the skipped email with deatiled reasons
+                skip_reason = f"Email already processed. Found in database with internet_message_id: {email_data['internet_message_id']}."
+                try:
+                    await log_skipped_email(
+                        email_data=email_data,
+                        reason_skipped=skip_reason,
+                        account_processed=account,
+                        skip_type="DUPLICATE",
+                        processing_time=processing_time
+                    )
+                    email_log(f">> {timestamp} Skipped email logged successfully [Subject: {subject}]")
+                except Exception as log_err:
+                    email_log(f">> {timestamp} Failed to log skipped email: {str(log_err)} [Subject: {subject}]")              
+                
                 # Mark the email as read if it was already found in the database
                 try:
                     email_log(f">> {timestamp} Attempting to mark already processed email as read [Subject: {subject}]")
@@ -71,7 +92,7 @@ async def process_email(access_token, account, email_data, message_id):
                 except Exception as e:
                     email_log(f">> {timestamp} Failed to mark already processed email as read: {str(e)}")
                 
-                # Enhanced: Log autoresponse details for already processed emails
+                # Log autoresponse details for already processed emails
                 email_log_capture.log_autoresponse_attempt(
                     email_id,
                     attempted=False,
@@ -92,7 +113,29 @@ async def process_email(access_token, account, email_data, message_id):
             
             email_log(f">> {timestamp} Email not found in database, proceeding with processing [Subject: {subject}]")
             
-            # Enhanced: Start autoresponse process concurrently with detailed logging
+            
+            # SECOND CHECK: Look to see if the email is coming from a MS EXCHANGE MAILBIN - Skip processing the mail, mark as read and log it. 
+            
+            original_sender_cleaned = original_sender.lower().strip()
+            
+            exchange_patterns = [
+                r'microsoftexchange[a-f0-9]+@',  # Standard Exchange pattern
+                r'exchange[a-f0-9]+@',          # Alternative Exchange pattern
+                r'[a-f0-9]{32}@'                # Generic 32-character hex @ domain
+            ]
+            
+            for pattern in exchange_patterns:
+                if re.search(pattern, original_sender_cleaned):
+                    reason = f"Microsoft Exchange system sender detected: {original_sender} (matches pattern '{pattern}')"
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                    return True, reason
+
+            
+            
+            
+            
+            
+            # Start autoresponse process concurrently with detailed logging
             # This will run in the background while the rest of the processing continues
             email_log(f">> {timestamp} Starting autoresponse task concurrently [Subject: {subject}]")
             autoresponse_attempted = True

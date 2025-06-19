@@ -1,5 +1,7 @@
 -- Create the skipped_mails table
 
+USE APEXDEV;
+
 CREATE TABLE [dbo].[skipped_mails] (
     -- Core identification fields
     [id] varchar(50) NOT NULL,                    -- Unique identifier for each skipped email entry (UUID)
@@ -32,11 +34,9 @@ ALTER TABLE [dbo].[skipped_mails] ADD CONSTRAINT [PK_skipped_mails] PRIMARY KEY 
 
 -- Add indexes for better performance on commonly queried fields
 CREATE INDEX [IX_skipped_mails_internet_message_id] ON [dbo].[skipped_mails] ([internet_message_id]);
-CREATE INDEX [IX_skipped_mails_eml_id] ON [dbo].[skipped_mails] ([eml_id]);
 CREATE INDEX [IX_skipped_mails_created_timestamp] ON [dbo].[skipped_mails] ([created_timestamp]);
 CREATE INDEX [IX_skipped_mails_dttm_proc] ON [dbo].[skipped_mails] ([dttm_proc]);
 CREATE INDEX [IX_skipped_mails_skip_type] ON [dbo].[skipped_mails] ([skip_type]);
 CREATE INDEX [IX_skipped_mails_rsn_skipped] ON [dbo].[skipped_mails] ([rsn_skipped]);
 
 -- Composite index for common queries
-CREATE INDEX [IX_skipped_mails_timestamp_reason] ON [dbo].[skipped_mails] ([created_timestamp], [skip_type], [rsn_skipped]);

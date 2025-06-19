@@ -225,6 +225,26 @@ async def forward_email(access_token, user_id, message_id, original_sender, forw
                                     }
                                 } for cc in cc_list if cc  # Additional check to ensure no empty emails
                             ]
+                            
+                            # THIS IS POSSIBLE CODE TO EXLUDE INTERNAL MARKED BIN FROM PERPETUATING IN CC LIST.REMOVE COMMENTS 
+                            # # Define the list of emails to exclude
+                            # LIST1 = set([
+                            #     # Add emails to exclude here, e.g.:
+                            #     # "exclude1@example.com", "exclude2@example.com"
+                            # ])
+                            # # Split the CC string and remove any whitespace
+                            # cc_list = [email.strip() for email in email_data['cc'].split(',') if email.strip()]
+                            # # Exclude emails in LIST1
+                            # filtered_cc_list = [cc for cc in cc_list if cc.lower() not in {e.lower() for e in LIST1}]
+                            # # Create properly formatted recipient objects for each CC
+                            # cc_recipients = [
+                            #     {
+                            #         "emailAddress": {
+                            #             "address": cc
+                            #         }
+                            #     } for cc in filtered_cc_list if cc  # Additional check to ensure no empty emails
+                            # ]
+                            
                     except Exception as cc_err:
                         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: email_client.py - Function: forward_email - Error formatting CC recipients: {str(cc_err)}")
                         # Continue without CC recipients if there's an error
