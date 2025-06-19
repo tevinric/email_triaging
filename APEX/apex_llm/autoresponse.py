@@ -47,14 +47,14 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
         email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - Starting autoresponse loop prevention analysis")
         email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - Recipient: {recipient_email}, Sender: {sender_email}, Subject: {subject}")
         
-        # 1. BASIC VALIDATION - Skip if sender email is empty - Not likely to happen but worthwhile checking
-        if not sender_email:
+        # 1. BASIC VALIDATION - Skip if sender email is empty - Not likely to happen but worthwhile checking - SEE UT 1 
+        if not sender_email or sender_email==None or sender_email=='' or len(sender_email.strip())<5:
             reason = "No sender email found"
             email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
             return True, reason
         
         # 2. BASIC VALIDATION - Skip if no recipient email - Not likely to happen but worthwhile checking
-        if not recipient_email:
+        if not recipient_email or recipient_email==None or recipient_email=='' or len(recipient_email.strip())<5:
             reason = "No recipient email found"
             email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
             return True, reason
@@ -63,7 +63,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
         sender_clean = sender_email.lower().strip()
         recipient_clean = recipient_email.lower().strip()
         
-        # DEBUG LOGGING - Add comprehensive logging for troubleshooting
+        # DEBUG LOGGING - Added comprehensive logging for troubleshooting
         email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
               f"ANALYZING: FROM='{sender_email}' TO='{recipient_email}' SUBJECT='{subject}'")
         email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
@@ -108,7 +108,16 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
                 email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
                 return True, reason
         
-        # 6. SYSTEM ADDRESS DETECTION - Enhanced list including Exchange-specific terms
+        
+        ## 6. ADDED NEW CHECK AFTER DISCUSSION WITH INFRASTRUCTURE TEAM (LEO)
+        # If the sender clean email address contains both 'microsoftexchange' and 'telesure.co.za', we skip the autoresponse.
+        if "microsoftexchange" in sender_clean and "telesure.co.za" in sender_clean:
+            reason = "Sender is Microsoft Exchange system at telesure.co.za"
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+            return True, reason
+        
+        
+        # 7. SYSTEM ADDRESS DETECTION - Enhanced list including Exchange-specific terms
         system_indicators = [
             'noreply', 'no-reply', 'donotreply', 'do-not-reply',
             'mailer-daemon', 'postmaster', 'daemon', 'mail-daemon',
@@ -124,7 +133,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
                 email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
                 return True, reason
         
-        # 7. SUBJECT LINE ANALYSIS - Check for bounce/error indicators
+        # 8. SUBJECT LINE ANALYSIS - Check for bounce/error indicators
         if subject:
             subject_clean = subject.lower().strip()
             bounce_subject_indicators = [
@@ -152,7 +161,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
                     email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
                     return True, reason
         
-        # 8. EMAIL BODY ANALYSIS - Check for common bounce message content
+        # 9. EMAIL BODY ANALYSIS - Check for common bounce message content
         if email_body:
             body_clean = email_body.lower().strip()
             bounce_body_indicators = [
@@ -172,7 +181,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
                     email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
                     return True, reason
         
-        # 9. AUTORESPONSE LOOP DETECTION - Check for existing autoresponse indicators
+        # 10. AUTORESPONSE LOOP DETECTION - Check for existing autoresponse indicators
         if subject:
             subject_clean = subject.lower().strip()
             autoresponse_indicators = [
@@ -186,7 +195,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
                     email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
                     return True, reason
         
-        # 10. DOMAIN-BASED SUSPICIOUS PATTERN DETECTION
+        # 11. DOMAIN-BASED SUSPICIOUS PATTERN DETECTION
         if '@' in sender_email:
             sender_domain = sender_email.split('@')[1].lower()
             recipient_domain = recipient_email.split('@')[1].lower() if '@' in recipient_email else ''
@@ -199,7 +208,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
                     email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
                     return True, reason
         
-        # 11. DEBUGGING LOG - Always log what we're allowing for troubleshooting
+        # 12. DEBUGGING LOG - Always log what we're allowing for troubleshooting
         email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
               f"ALLOWING autoresponse: FROM={sender_email} TO={recipient_email} SUBJECT='{subject}'")
         
