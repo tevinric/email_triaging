@@ -1,18 +1,19 @@
 import sys
 import time
 import asyncio
+import re  # Added import for regex patterns
 from email_processor.email_client import get_access_token, fetch_unread_emails, forward_email, mark_email_as_read, force_mark_emails_as_read
 from apex_llm.apex import apex_categorise, apex_action_check
 from config import EMAIL_ACCOUNTS, EMAIL_FETCH_INTERVAL, DEFAULT_EMAIL_ACCOUNT
 from apex_llm.apex_logging import (
     create_log, add_to_log, log_apex_success, log_apex_fail, 
     insert_log_to_db, check_email_processed, log_apex_intervention,
-    email_log_capture, email_log, insert_system_log_to_db, log_skipped_email  # Import enhanced logging
+    email_log_capture, email_log, insert_system_log_to_db,
+    log_skipped_email  # Added import for skipped email logging
 )
 import datetime
 from apex_llm.apex_routing import ang_routings
 from apex_llm.autoresponse import send_autoresponse 
-import re
 
 
 # Set to track emails that have been processed but not marked as read yet
@@ -26,7 +27,7 @@ async def process_email(access_token, account, email_data, message_id):
     Process a single email: categorize it, forward it, mark as read, and log it.
     Ensures single logging per email processed and implements robust error handling
     to guarantee email delivery despite potential failures.
-    Enhanced with comprehensive autoresponse logging.
+    Enhanced with comprehensive autoresponse logging and Exchange pattern detection.
     
     Args:
         access_token: Valid Microsoft Graph API token
@@ -62,16 +63,14 @@ async def process_email(access_token, account, email_data, message_id):
         try:
             # First check if this email has already been processed to avoid duplicates
             email_log(f">> {timestamp} Checking if email already processed [Subject: {subject}]")
-            
             if await check_email_processed(email_data['internet_message_id']):
+                email_log(f">> {timestamp} Email already processed [Subject: {subject}]. Marking as read and logging as skipped.")
                 
-                email_log(f">> {timestamp} Email already processed [Subject: {subject}]. Marking as read.")
-                
-                # Calculate the procssing time: 
+                # Calculate processing time before skipping
                 processing_time = (datetime.datetime.now() - start_time).total_seconds()
                 
-                #Log the skipped email with deatiled reasons
-                skip_reason = f"Email already processed. Found in database with internet_message_id: {email_data['internet_message_id']}."
+                # Log the skipped email with detailed reason
+                skip_reason = f"Email already processed - found in database with internet_message_id: {email_data['internet_message_id']}"
                 try:
                     await log_skipped_email(
                         email_data=email_data,
@@ -80,9 +79,9 @@ async def process_email(access_token, account, email_data, message_id):
                         skip_type="DUPLICATE",
                         processing_time=processing_time
                     )
-                    email_log(f">> {timestamp} Skipped email logged successfully [Subject: {subject}]")
+                    email_log(f">> {timestamp} Successfully logged skipped email to skipped_mails table [Subject: {subject}]")
                 except Exception as log_err:
-                    email_log(f">> {timestamp} Failed to log skipped email: {str(log_err)} [Subject: {subject}]")              
+                    email_log(f">> {timestamp} Failed to log skipped email: {str(log_err)} [Subject: {subject}]")
                 
                 # Mark the email as read if it was already found in the database
                 try:
@@ -92,7 +91,7 @@ async def process_email(access_token, account, email_data, message_id):
                 except Exception as e:
                     email_log(f">> {timestamp} Failed to mark already processed email as read: {str(e)}")
                 
-                # Log autoresponse details for already processed emails
+                # Enhanced: Log autoresponse details for already processed emails
                 email_log_capture.log_autoresponse_attempt(
                     email_id,
                     attempted=False,
@@ -111,31 +110,89 @@ async def process_email(access_token, account, email_data, message_id):
                 
                 return
             
-            email_log(f">> {timestamp} Email not found in database, proceeding with processing [Subject: {subject}]")
+            email_log(f">> {timestamp} Email not found in database, proceeding with additional checks [Subject: {subject}]")
             
+            # NEW: Check for Microsoft Exchange system patterns (autoresponse.py checks 5 & 6)
+            email_log(f">> {timestamp} Checking for Microsoft Exchange system patterns [Subject: {subject}]")
+            sender_clean = original_sender.lower().strip() if original_sender else ""
             
-            # SECOND CHECK: Look to see if the email is coming from a MS EXCHANGE MAILBIN - Skip processing the mail, mark as read and log it. 
-            
-            original_sender_cleaned = original_sender.lower().strip()
-            
+            # Check 5: MICROSOFT EXCHANGE SYSTEM DETECTION - Primary defense against bounce loops
             exchange_patterns = [
                 r'microsoftexchange[a-f0-9]+@',  # Standard Exchange pattern
                 r'exchange[a-f0-9]+@',          # Alternative Exchange pattern
                 r'[a-f0-9]{32}@'                # Generic 32-character hex @ domain
             ]
             
+            exchange_pattern_detected = False
+            detected_pattern = ""
+            
             for pattern in exchange_patterns:
-                if re.search(pattern, original_sender_cleaned):
-                    reason = f"Microsoft Exchange system sender detected: {original_sender} (matches pattern '{pattern}')"
-                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
-                    return True, reason
-
+                if re.search(pattern, sender_clean):
+                    exchange_pattern_detected = True
+                    detected_pattern = pattern
+                    break
             
+            # Check 6: Domain-specific substring detection for telesure.co.za
+            telesure_exchange_detected = "microsoftexchange" in sender_clean and "telesure.co.za" in sender_clean
             
+            # If either Exchange pattern is detected, skip the email
+            if exchange_pattern_detected or telesure_exchange_detected:
+                # Calculate processing time before skipping
+                processing_time = (datetime.datetime.now() - start_time).total_seconds()
+                
+                # Determine the specific reason
+                if exchange_pattern_detected:
+                    skip_reason = f"Microsoft Exchange system sender detected: {original_sender} (matches pattern '{detected_pattern}')"
+                    skip_type = "EXCHANGE_SYSTEM"
+                    email_log(f">> {timestamp} Exchange pattern detected [Subject: {subject}]: {skip_reason}")
+                else:
+                    skip_reason = f"Sender is Microsoft Exchange system at telesure.co.za: {original_sender}"
+                    skip_type = "TELESURE_EXCHANGE"
+                    email_log(f">> {timestamp} Telesure Exchange system detected [Subject: {subject}]: {skip_reason}")
+                
+                # Log the skipped email
+                try:
+                    await log_skipped_email(
+                        email_data=email_data,
+                        reason_skipped=skip_reason,
+                        account_processed=account,
+                        skip_type=skip_type,
+                        processing_time=processing_time
+                    )
+                    email_log(f">> {timestamp} Successfully logged Exchange system skipped email to skipped_mails table [Subject: {subject}]")
+                except Exception as log_err:
+                    email_log(f">> {timestamp} Failed to log Exchange system skipped email: {str(log_err)} [Subject: {subject}]")
+                
+                # Mark the email as read
+                try:
+                    email_log(f">> {timestamp} Attempting to mark Exchange system email as read [Subject: {subject}]")
+                    await mark_email_as_read(access_token, account, message_id)
+                    email_log(f">> {timestamp} Successfully marked Exchange system email as read [Subject: {subject}]")
+                except Exception as e:
+                    email_log(f">> {timestamp} Failed to mark Exchange system email as read: {str(e)} [Subject: {subject}]")
+                
+                # Enhanced: Log autoresponse details for Exchange system emails
+                email_log_capture.log_autoresponse_attempt(
+                    email_id,
+                    attempted=False,
+                    successful=False,
+                    skip_reason=f"Exchange system sender detected - {skip_type}",
+                    recipient=original_sender
+                )
+                
+                # Insert system logs for Exchange system skipped emails
+                try:
+                    await insert_system_log_to_db(email_id)
+                    system_log_inserted = True
+                    email_log(f">> {timestamp} System log inserted for Exchange system skipped email [Subject: {subject}]")
+                except Exception as e:
+                    email_log(f">> {timestamp} Failed to insert system log for Exchange system skipped email: {str(e)} [Subject: {subject}]")
+                
+                return
             
+            email_log(f">> {timestamp} No Exchange system patterns detected, proceeding with normal processing [Subject: {subject}]")
             
-            
-            # Start autoresponse process concurrently with detailed logging
+            # Enhanced: Start autoresponse process concurrently with detailed logging
             # This will run in the background while the rest of the processing continues
             email_log(f">> {timestamp} Starting autoresponse task concurrently [Subject: {subject}]")
             autoresponse_attempted = True
@@ -925,7 +982,7 @@ async def main():
     loop_count = 0
 
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
-    print(f">> {timestamp} APEX Email Processing Service starting with enhanced autoresponse logging...")
+    print(f">> {timestamp} APEX Email Processing Service starting with enhanced autoresponse logging and Exchange pattern detection...")
 
     while True:
         start_time = time.time()
@@ -967,7 +1024,7 @@ def trigger_email_triage():
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     if len(sys.argv) > 1 and sys.argv[1] == 'start':
-        print(f">> {timestamp} Starting APEX email processing service with enhanced autoresponse logging...")
+        print(f">> {timestamp} Starting APEX email processing service with enhanced autoresponse logging and Exchange pattern detection...")
         try:
             asyncio.run(main())
         except KeyboardInterrupt:
