@@ -8,8 +8,9 @@ import asyncio
 # AZURE OPENAI CONNECTION SETTINGS
 from config import (
     AZURE_OPENAI_KEY, AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_BACKUP_KEY, AZURE_OPENAI_BACKUP_ENDPOINT
+    AZURE_OPENAI_BACKUP_KEY, AZURE_OPENAI_BACKUP_ENDPOINT, gpt4opromptcost, gpt4ocompletioncost, gpt4ocachecost, gpt4ominipromptcost, gpt4ominicompletioncost, gpt4ominicachecost
 )
+
 
 # Import email_log for centralized logging
 from apex_llm.apex_logging import email_log
@@ -29,10 +30,10 @@ client = AzureOpenAI(
 backup_client = None
 
 # All costs below are in USD
-model_costs = {"gpt-4o-mini": {"prompt_token_cost_pm":0.15,
-                            "completion_token_cost_pm":0.60},
-               "gpt-4o":     {"prompt_token_cost_pm":5,
-                            "completion_token_cost_pm":15},
+model_costs = {"gpt-4o-mini": {"prompt_token_cost_pm":gpt4ominipromptcost,
+                            "completion_token_cost_pm":gpt4ominicompletioncost},
+               "gpt-4o":     {"prompt_token_cost_pm":gpt4opromptcost,
+                            "completion_token_cost_pm":gpt4ocompletioncost},
                }
 
 async def call_openai_with_fallback(deployment, messages, temperature=0.1, subject=None):

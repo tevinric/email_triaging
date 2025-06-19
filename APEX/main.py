@@ -171,7 +171,7 @@ async def process_email(access_token, account, email_data, message_id):
                 except Exception as e:
                     email_log(f">> {timestamp} Failed to mark Exchange system email as read: {str(e)} [Subject: {subject}]")
                 
-                # Enhanced: Log autoresponse details for Exchange system emails
+                # Log autoresponse details for Exchange system emails
                 email_log_capture.log_autoresponse_attempt(
                     email_id,
                     attempted=False,
@@ -192,7 +192,7 @@ async def process_email(access_token, account, email_data, message_id):
             
             email_log(f">> {timestamp} No Exchange system patterns detected, proceeding with normal processing [Subject: {subject}]")
             
-            # Enhanced: Start autoresponse process concurrently with detailed logging
+            # Start autoresponse process concurrently with detailed logging
             # This will run in the background while the rest of the processing continues
             email_log(f">> {timestamp} Starting autoresponse task concurrently [Subject: {subject}]")
             autoresponse_attempted = True

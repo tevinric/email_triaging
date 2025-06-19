@@ -16,6 +16,16 @@ SQL_DATABASE = os.environ.get('SQL_DATABASE')
 SQL_USERNAME = os.environ.get('SQL_USERNAME')
 SQL_PASSWORD = os.environ.get('SQL_PASSWORD')
 
+
+# MODEL COSTS
+gpt4opromptcost = os.environ.get('gpt4opromptcost')
+gpt4ocompletioncost = os.environ.get('gpt4ocompletioncost')
+gpt4ocachecost = os.environ.get('gpt4ocachecost')
+gpt4ominipromptcost = os.environ.get('gpt4ominipromptcost')
+gpt4ominicompletioncost = os.environ.get('gpt4ominicompletioncost')
+gpt4ominicachecost = os.environ.get('gpt4ominicachecost')
+
+
 #MICROSOFT GRAPH API CONFIGS
 CLIENT_ID = os.environ.get('CLIENT_ID')
 TENANT_ID = os.environ.get('TENANT_ID')
