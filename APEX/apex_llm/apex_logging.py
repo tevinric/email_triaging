@@ -580,6 +580,262 @@ def log_apex_intervention(log, original_destination, routed_destination):
         # Default to false if error occurs
         add_to_log("apex_intervention", "false", log)
 
+# =======================================================================================
+# NEW SKIPPED EMAIL LOGGING FUNCTIONS
+# =======================================================================================
+
+def create_skipped_email_log(email_data, reason_skipped, account_processed=None, skip_type="DUPLICATE", processing_time=0.0):
+    """
+    Create a new log entry for a skipped email.
+    
+    Args:
+        email_data (dict): Dictionary containing email data
+        reason_skipped (str): Reason why the email was skipped
+        account_processed (str): Which email account was being processed (optional)
+        skip_type (str): Type of skip (DUPLICATE, ERROR, etc.)
+        processing_time (float): Time spent before skipping (optional)
+        
+    Returns:
+        dict: Log entry for the skipped email
+    """
+    log = {"id": str(uuid.uuid4())}
+    
+    try:
+        # Add email ID
+        add_to_skipped_log("eml_id", email_data.get('email_id'), log)
+        add_to_skipped_log("internet_message_id", email_data.get('internet_message_id'), log)
+        
+        # Process date received with error handling
+        try:
+            date_received_str = email_data.get('date_received')
+            if date_received_str:
+                # Handle different date formats
+                if 'T' in date_received_str and 'Z' in date_received_str:
+                    # ISO format: '2025-06-17T08:18:36Z'
+                    date_received_dt = datetime.datetime.strptime(date_received_str, '%Y-%m-%dT%H:%M:%SZ')
+                    date_received_dt = date_received_dt + datetime.timedelta(hours=2)  # Adjust timezone
+                elif 'T' in date_received_str:
+                    # ISO format without Z: '2025-06-17T08:18:36'
+                    date_received_dt = datetime.datetime.strptime(date_received_str, '%Y-%m-%dT%H:%M:%S')
+                    date_received_dt = date_received_dt + datetime.timedelta(hours=2)  # Adjust timezone
+                else:
+                    # Try parsing as standard datetime string
+                    date_received_dt = datetime.datetime.strptime(date_received_str, '%Y-%m-%d %H:%M:%S.%f')
+                
+                add_to_skipped_log("dttm_rec", date_received_dt, log)
+            else:
+                add_to_skipped_log("dttm_rec", datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))), log)
+        except Exception as e:
+            email_log(f"Script: apex_logging.py - Function: create_skipped_email_log - Error processing date: {str(e)}")
+            add_to_skipped_log("dttm_rec", datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))), log)
+        
+        # Add processing time (when the skip occurred)
+        add_to_skipped_log("dttm_proc", datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))), log)
+        
+        # Add email header details
+        add_to_skipped_log("eml_frm", email_data.get('from'), log)
+        add_to_skipped_log("eml_to", email_data.get('to'), log)
+        add_to_skipped_log("eml_cc", email_data.get('cc'), log)
+        add_to_skipped_log("eml_subject", email_data.get('subject'), log)
+        
+        # Handle potentially large body text
+        body_text = email_data.get('body_text', '')
+        if body_text and len(body_text) > 8000:  # SQL Server VARCHAR(MAX) has practical limits
+            body_text = body_text[:8000] + "... [truncated]"
+        add_to_skipped_log("eml_body", body_text, log)
+        
+        # Add skip-specific information
+        add_to_skipped_log("rsn_skipped", reason_skipped, log)
+        add_to_skipped_log("skip_type", skip_type, log)
+        add_to_skipped_log("account_processed", account_processed, log)
+        add_to_skipped_log("processing_time_seconds", processing_time, log)
+        add_to_skipped_log("created_timestamp", datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))), log)
+        
+    except Exception as e:
+        email_log(f"Script: apex_logging.py - Function: create_skipped_email_log - Error creating skipped email log: {str(e)}")
+        # Ensure we have at least a valid ID and reason
+        if "id" not in log:
+            log["id"] = str(uuid.uuid4())
+        if "rsn_skipped" not in log:
+            log["rsn_skipped"] = f"Error creating log: {str(e)}"
+    
+    return log
+
+def add_to_skipped_log(key, value, log):
+    """
+    Add a key-value pair to the skipped email log, with error handling.
+    
+    Args:
+        key (str): Log field name
+        value: Value to add to the log
+        log (dict): Log dictionary to update
+        
+    Returns:
+        None
+    """
+    try:
+        # Handle None values
+        if value is None:
+            log[key] = "" if key != "processing_time_seconds" else 0.0
+        else:
+            log[key] = value
+    except Exception as e:
+        email_log(f"Script: apex_logging.py - Function: add_to_skipped_log - Error adding {key} to skipped log: {str(e)}")
+        # Set appropriate default based on field type
+        if key == "processing_time_seconds":
+            log[key] = 0.0
+        elif key in ["dttm_rec", "dttm_proc", "created_timestamp"]:
+            log[key] = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2)))
+        else:
+            log[key] = ""
+
+async def insert_skipped_email_to_db(skipped_log, max_retries=3):
+    """
+    Insert a skipped email log entry into the SQL database with retry logic.
+    
+    Args:
+        skipped_log (dict): Skipped email log dictionary to insert
+        max_retries (int): Maximum number of retry attempts
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    server = SQL_SERVER
+    database = SQL_DATABASE
+    username = SQL_USERNAME
+    password = SQL_PASSWORD
+    
+    def db_operation():
+        """Database insertion operation to be executed in a separate thread"""
+        for attempt in range(max_retries):
+            try:
+                # Connect to the database
+                conn = pyodbc.connect(
+                    f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+                )
+                cursor = conn.cursor()
+                
+                # Prepare SQL statement for skipped_mails table
+                columns = ', '.join(skipped_log.keys())
+                placeholders = ', '.join(['?' for _ in skipped_log.values()])
+                sql = f"INSERT INTO [{database}].[dbo].[skipped_mails] ({columns}) VALUES ({placeholders})"
+                
+                # Sanitize values for SQL insertion
+                values = []
+                for value in skipped_log.values():
+                    if isinstance(value, str):
+                        # Handle string encoding and truncation if necessary
+                        try:
+                            sanitized = value.encode('utf-8').decode('utf-8')
+                            values.append(sanitized)
+                        except UnicodeError:
+                            # If encoding fails, use a placeholder
+                            values.append("[encoding error]")
+                    else:
+                        values.append(value)
+                
+                # Execute SQL
+                cursor.execute(sql, tuple(values))
+                conn.commit()
+                email_log(f"Script: apex_logging.py - Function: insert_skipped_email_to_db - Successfully added skipped email to DB")
+                
+                cursor.close()
+                conn.close()
+                return True
+                
+            except pyodbc.Error as e:
+                email_log(f"Script: apex_logging.py - Function: insert_skipped_email_to_db - Database error (attempt {attempt+1}/{max_retries}): {str(e)}")
+                
+                if attempt < max_retries - 1:
+                    # Implement backoff strategy
+                    time.sleep(2 ** attempt)
+                else:
+                    email_log(f"Script: apex_logging.py - Function: insert_skipped_email_to_db - Failed to insert skipped email log after {max_retries} attempts")
+                    
+            except Exception as e:
+                email_log(f"Script: apex_logging.py - Function: insert_skipped_email_to_db - Unexpected error: {str(e)}")
+                
+                if attempt < max_retries - 1:
+                    # Implement backoff strategy
+                    time.sleep(2 ** attempt)
+                else:
+                    email_log(f"Script: apex_logging.py - Function: insert_skipped_email_to_db - Failed to insert skipped email log after {max_retries} attempts")
+        
+        return False
+    
+    try:
+        return await asyncio.get_event_loop().run_in_executor(db_pool, db_operation)
+    except Exception as e:
+        email_log(f"Script: apex_logging.py - Function: insert_skipped_email_to_db - Error executing db_operation: {str(e)}")
+        return False
+
+async def log_skipped_email(email_data, reason_skipped, account_processed=None, skip_type="DUPLICATE", processing_time=0.0):
+    """
+    Complete function to log a skipped email - creates log and inserts to database.
+    
+    Args:
+        email_data (dict): Dictionary containing email data
+        reason_skipped (str): Reason why the email was skipped
+        account_processed (str): Which email account was being processed (optional)
+        skip_type (str): Type of skip (DUPLICATE, ERROR, etc.)
+        processing_time (float): Time spent before skipping (optional)
+        
+    Returns:
+        bool: True if successfully logged, False otherwise
+    """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
+    try:
+        email_log(f">> {timestamp} Script: apex_logging.py - Function: log_skipped_email - Creating skipped email log entry")
+        
+        # Create the skipped email log
+        skipped_log = create_skipped_email_log(
+            email_data, 
+            reason_skipped, 
+            account_processed, 
+            skip_type, 
+            processing_time
+        )
+        
+        # Insert to database
+        success = await insert_skipped_email_to_db(skipped_log)
+        
+        if success:
+            email_log(f">> {timestamp} Script: apex_logging.py - Function: log_skipped_email - Successfully logged skipped email: {email_data.get('subject', 'No Subject')}")
+        else:
+            email_log(f">> {timestamp} Script: apex_logging.py - Function: log_skipped_email - Failed to log skipped email: {email_data.get('subject', 'No Subject')}")
+        
+        return success
+        
+    except Exception as e:
+        email_log(f">> {timestamp} Script: apex_logging.py - Function: log_skipped_email - Error logging skipped email: {str(e)}")
+        return False
+
+# Synchronous version for backward compatibility
+def log_skipped_email_sync(email_data, reason_skipped, account_processed=None, skip_type="DUPLICATE", processing_time=0.0):
+    """
+    Synchronous wrapper for log_skipped_email
+    
+    Args:
+        email_data (dict): Dictionary containing email data
+        reason_skipped (str): Reason why the email was skipped
+        account_processed (str): Which email account was being processed (optional)
+        skip_type (str): Type of skip (DUPLICATE, ERROR, etc.)
+        processing_time (float): Time spent before skipping (optional)
+        
+    Returns:
+        bool: True if successfully logged, False otherwise
+    """
+    try:
+        return asyncio.run(log_skipped_email(email_data, reason_skipped, account_processed, skip_type, processing_time))
+    except Exception as e:
+        email_log(f"Script: apex_logging.py - Function: log_skipped_email_sync - Error: {str(e)}")
+        return False
+
+# =======================================================================================
+# END OF SKIPPED EMAIL LOGGING FUNCTIONS
+# =======================================================================================
+
 async def insert_log_to_db(log, max_retries=3):
     """
     Insert a log entry into the SQL database with retry logic.
