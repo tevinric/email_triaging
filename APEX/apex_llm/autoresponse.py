@@ -957,10 +957,21 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
                 <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
                     <h2 style="color: #0056b3;">Thank you for contacting us</h2>
                     
-                    <p>We have received your email and will respond as soon as possible.</p>
+                    <p>Good day,</p>
+                    <br>
+                    <p>Welcome to Welcome to Auto&General where you are always serviced right.</p>
+                    <br>
+                    <p>Thank you for reaching out to us. One of our dedicated consultants from the Services team will be in contact with you during operating hours within the next business day.</p>
+                    <br> 
+                    <p>Can’t wait till then? Download the A&G app now and get access to your policy 24/7.</p>
+                    <br>
+                    <p>Please do not reply to this e-mail as it is an automated response.</p>
+                    <br>
+                    <br>
+                    <p>Regards,</p>
+                    <p>The Auto&General Team</p>
                     
-                    <p>Reference number: <strong>{{REFERENCE_ID}}</strong></p>
-                    
+                                        
                     <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dddddd; font-size: 12px; color: #666666;">
                         <p>This is an automated response. Please do not reply to this email.</p>
                     </div>
