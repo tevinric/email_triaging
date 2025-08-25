@@ -3,7 +3,7 @@ import asyncio
 import datetime
 import time
 from msal import ConfidentialClientApplication
-from config import CLIENT_ID, TENANT_ID, CLIENT_SECRET, AUTHORITY, SCOPE
+from config import CLIENT_ID, TENANT_ID, CLIENT_SECRET, AUTHORITY, SCOPE, POLICY_SERVICES, TRACKING_MAILS, ONLINESUPPORT_MAILS, DIGITALCOMMS_MAILS, CC_EXCLUSION_LIST
 from email_processor.email_utils import create_email_details
 
 async def get_access_token():
@@ -59,7 +59,7 @@ async def fetch_unread_emails(access_token, user_id, max_retries=3):
                         messages = data.get('value', [])
                         
                         if not messages:
-                            print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: email_client.py - Function: fetch_unread_emails - No unread messages found for user {user_id}")
+                            # print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: email_client.py - Function: fetch_unread_emails - No unread messages found for user {user_id}")
                             return []
                             
                         email_details_list = []
@@ -214,17 +214,31 @@ async def forward_email(access_token, user_id, message_id, original_sender, forw
                     # Format CC recipients from comma-separated string
                     cc_recipients = []
                     try:
-                        if email_data.get('cc'):
+                        if email_data.get('cc'):                         
+                            
+                            ## New code start
+
                             # Split the CC string and remove any whitespace
-                            cc_list = [email.strip() for email in email_data['cc'].split(',') if email.strip()]
+                            cc_list = [email.strip() for email in email_data.get('cc').split(',') if email.strip()]
+                            
+                            # GET THE LIST OF EXLUDED MAILS FROM THE CC EXCLUSION LIST
+                            EXCLUDED_EMAILS_SET = get_excluded_emails_set(CC_EXCLUSION_LIST) 
+                            
+                            
+                            # Exclude emails in EXCLUDED_EMAILS_SET
+                            filtered_cc_list = [cc for cc in cc_list if cc.lower() not in {e.lower() for e in EXCLUDED_EMAILS_SET}]
+
                             # Create properly formatted recipient objects for each CC
                             cc_recipients = [
                                 {
                                     "emailAddress": {
                                         "address": cc
                                     }
-                                } for cc in cc_list if cc  # Additional check to ensure no empty emails
+                                } for cc in filtered_cc_list if cc  # Additional check to ensure no empty emails
                             ]
+                            
+                            ## New code end
+                            
                     except Exception as cc_err:
                         print(f">> {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')} Script: email_client.py - Function: forward_email - Error formatting CC recipients: {str(cc_err)}")
                         # Continue without CC recipients if there's an error
@@ -391,3 +405,20 @@ def forward_email_sync(access_token, user_id, message_id, original_sender, forwa
         bool: True if successfully forwarded, False otherwise
     """
     return asyncio.run(forward_email(access_token, user_id, message_id, original_sender, forward_to, email_data, forwardMsg))
+
+
+## 10/07/2025 - Adding new function to parse exclusion mails in the cc field and return a list of emails for APEX to exclude if found in the the email cc field
+def get_excluded_emails_set(EMAIL_LIST):
+    """
+    Parse the excluded emails list from environment variable into a set.
+    
+    Returns:
+        set: Set of email addresses to exclude (lowercase for case-insensitive comparison)
+    """
+    excluded_emails = EMAIL_LIST.strip()
+    if not excluded_emails:
+        return set()
+    
+    # Split by comma, strip whitespace, and convert to lowercase for case-insensitive comparison
+    email_list = [email.strip().lower() for email in excluded_emails.split(',') if email.strip()]
+    return set(email_list)

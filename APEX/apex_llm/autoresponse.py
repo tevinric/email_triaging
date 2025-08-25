@@ -9,6 +9,7 @@ import base64
 from bs4 import BeautifulSoup
 from azure.storage.blob.aio import BlobServiceClient
 from email_processor.email_client import get_access_token
+from apex_llm.apex_logging import email_log  # Import email_log for system logging
 from config import (
     AZURE_STORAGE_CONNECTION_STRING, 
     BLOB_CONTAINER_NAME, 
@@ -43,24 +44,29 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
     
     ## IF any of the following loop check conditions are met, we return True to skip the autoresponse.
     try:
-        # 1. BASIC VALIDATION - Skip if sender email is empty - Not likely to happen but worthwhile checking
-        if not sender_email:
-            # SKIPS autoresponse
-            return True, "No sender email found"
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - Starting autoresponse loop prevention analysis")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - Recipient: {recipient_email}, Sender: {sender_email}, Subject: {subject}")
+        
+        # 1. BASIC VALIDATION - Skip if sender email is empty - Not likely to happen but worthwhile checking - SEE UT 1 
+        if not sender_email or sender_email==None or sender_email=='' or len(sender_email.strip())<5:
+            reason = "No sender email found"
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+            return True, reason
         
         # 2. BASIC VALIDATION - Skip if no recipient email - Not likely to happen but worthwhile checking
-        if not recipient_email:
-            # SKIPS autoresponse
-            return True, "No recipient email found"
+        if not recipient_email or recipient_email==None or recipient_email=='' or len(recipient_email.strip())<5:
+            reason = "No recipient email found"
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+            return True, reason
         
         # Clean up email addresses for comparison - push to lower case and strip whitespace
         sender_clean = sender_email.lower().strip()
         recipient_clean = recipient_email.lower().strip()
         
-        # DEBUG LOGGING - Add comprehensive logging for troubleshooting
-        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+        # DEBUG LOGGING - Added comprehensive logging for troubleshooting
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
               f"ANALYZING: FROM='{sender_email}' TO='{recipient_email}' SUBJECT='{subject}'")
-        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
               f"EMAIL_ACCOUNTS: {EMAIL_ACCOUNTS}")
         
         # 3. PRIMARY LOOP PREVENTION - Skip if email was sent TO any autoresponse account
@@ -69,13 +75,14 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
             for account in EMAIL_ACCOUNTS:
                 if account:
                     account_clean = account.lower().strip()
-                    print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
                           f"COMPARING recipient '{recipient_clean}' with account '{account_clean}'")
 
                     # CHECKING -> Was the email sent to the autoresponse account/ consolidation bin?
                     if recipient_clean == account_clean:
-                        # SKIPS autoresponse
-                        return True, f"Email sent directly to autoresponse account: {recipient_email}"
+                        reason = f"Email sent directly to autoresponse account: {recipient_email}"
+                        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                        return True, reason
         
         # 4. SECONDARY LOOP PREVENTION - Skip if sender is also an autoresponse account. Prevention againt self initiatied loops
         if EMAIL_ACCOUNTS:
@@ -83,8 +90,9 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
                 if account:
                     account_clean = account.lower().strip()
                     if sender_clean == account_clean:
-                        # SKIPS autorespons
-                        return True, f"Sender is also an autoresponse account: {sender_email}"
+                        reason = f"Sender is also an autoresponse account: {sender_email}"
+                        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                        return True, reason
         
         # 5. MICROSOFT EXCHANGE SYSTEM DETECTION - Primary defense against bounce loops
         # Microsoft Exchange generates addresses like: MicrosoftExchange329e71ec88ae4615bbc36ab6ce41109e@company.co.za
@@ -96,9 +104,20 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
         
         for pattern in exchange_patterns:
             if re.search(pattern, sender_clean):
-                return True, f"Microsoft Exchange system sender detected: {sender_email} (matches pattern '{pattern}')"
+                reason = f"Microsoft Exchange system sender detected: {sender_email} (matches pattern '{pattern}')"
+                email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                return True, reason
         
-        # 6. SYSTEM ADDRESS DETECTION - Enhanced list including Exchange-specific terms
+        
+        ## 6. ADDED NEW CHECK AFTER DISCUSSION WITH INFRASTRUCTURE TEAM (LEO)
+        # If the sender clean email address contains both 'microsoftexchange' and 'telesure.co.za', we skip the autoresponse.
+        if "microsoftexchange" in sender_clean and "telesure.co.za" in sender_clean:
+            reason = "Sender is Microsoft Exchange system at telesure.co.za"
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+            return True, reason
+        
+        
+        # 7. SYSTEM ADDRESS DETECTION - Enhanced list including Exchange-specific terms
         system_indicators = [
             'noreply', 'no-reply', 'donotreply', 'do-not-reply',
             'mailer-daemon', 'postmaster', 'daemon', 'mail-daemon',
@@ -110,9 +129,11 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
         # Check if sender contains any system indicators
         for indicator in system_indicators:
             if indicator in sender_clean:
-                return True, f"System/automated sender detected: {sender_email} (contains '{indicator}')"
+                reason = f"System/automated sender detected: {sender_email} (contains '{indicator}')"
+                email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                return True, reason
         
-        # 7. SUBJECT LINE ANALYSIS - Check for bounce/error indicators
+        # 8. SUBJECT LINE ANALYSIS - Check for bounce/error indicators
         if subject:
             subject_clean = subject.lower().strip()
             bounce_subject_indicators = [
@@ -128,15 +149,19 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
             
             for indicator in bounce_subject_indicators:
                 if indicator in subject_clean:
-                    return True, f"Bounce/error message detected in subject: '{subject}' (contains '{indicator}')"
+                    reason = f"Bounce/error message detected in subject: '{subject}' (contains '{indicator}')"
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                    return True, reason
             
             # Special check for subjects that start with common bounce prefixes
             bounce_prefixes = ['undeliverable:', 'delivery failure:', 'returned mail:', 'ndr:']
             for prefix in bounce_prefixes:
                 if subject_clean.startswith(prefix):
-                    return True, f"Bounce message detected by subject prefix: '{subject}' (starts with '{prefix}')"
+                    reason = f"Bounce message detected by subject prefix: '{subject}' (starts with '{prefix}')"
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                    return True, reason
         
-        # 8. EMAIL BODY ANALYSIS - Check for common bounce message content
+        # 9. EMAIL BODY ANALYSIS - Check for common bounce message content
         if email_body:
             body_clean = email_body.lower().strip()
             bounce_body_indicators = [
@@ -152,9 +177,11 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
             
             for indicator in bounce_body_indicators:
                 if indicator in body_clean:
-                    return True, f"Bounce/error message detected in body content (contains '{indicator}')"
+                    reason = f"Bounce/error message detected in body content (contains '{indicator}')"
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                    return True, reason
         
-        # 9. AUTORESPONSE LOOP DETECTION - Check for existing autoresponse indicators
+        # 10. AUTORESPONSE LOOP DETECTION - Check for existing autoresponse indicators
         if subject:
             subject_clean = subject.lower().strip()
             autoresponse_indicators = [
@@ -164,9 +191,11 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
             
             for indicator in autoresponse_indicators:
                 if indicator in subject_clean:
-                    return True, f"Potential autoresponse loop detected in subject: '{subject}' (contains '{indicator}')"
+                    reason = f"Potential autoresponse loop detected in subject: '{subject}' (contains '{indicator}')"
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                    return True, reason
         
-        # 10. DOMAIN-BASED SUSPICIOUS PATTERN DETECTION
+        # 11. DOMAIN-BASED SUSPICIOUS PATTERN DETECTION
         if '@' in sender_email:
             sender_domain = sender_email.split('@')[1].lower()
             recipient_domain = recipient_email.split('@')[1].lower() if '@' in recipient_email else ''
@@ -175,10 +204,12 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
             if sender_domain == recipient_domain:
                 # If it's the same domain and has system characteristics, be extra cautious
                 if any(indicator in sender_clean for indicator in ['exchange', 'system', 'daemon', 'admin']):
-                    return True, f"Internal system communication detected: {sender_email} to {recipient_email}"
+                    reason = f"Internal system communication detected: {sender_email} to {recipient_email}"
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - SKIPPING: {reason}")
+                    return True, reason
         
-        # 11. DEBUGGING LOG - Always log what we're allowing for troubleshooting
-        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
+        # 12. DEBUGGING LOG - Always log what we're allowing for troubleshooting
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - "
               f"ALLOWING autoresponse: FROM={sender_email} TO={recipient_email} SUBJECT='{subject}'")
         
         return False, "Autoresponse allowed"
@@ -186,7 +217,7 @@ def should_skip_autoresponse(recipient_email, sender_email, subject=None, email_
     except Exception as e:
         # If there's any error in the analysis, err on the side of caution and skip autoresponse
         error_msg = f"Error in autoresponse analysis: {str(e)}"
-        print(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - {error_msg}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: should_skip_autoresponse - ERROR: {error_msg}")
         return True, error_msg
 
 async def get_template_from_blob(recipient_email):
@@ -203,10 +234,14 @@ async def get_template_from_blob(recipient_email):
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     try:
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Starting template retrieval for {recipient_email}")
+        
         # Extract the mailbox name and domain from the email address
         email_parts = recipient_email.lower().split('@')
         mailbox_name = email_parts[0]
         domain = email_parts[1] if len(email_parts) > 1 else 'company.co.za'  # Default domain if not present
+        
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Extracted mailbox: {mailbox_name}, domain: {domain}")
         
         # Check if we have a custom folder mapping for this email address
         folder_name = None
@@ -214,21 +249,21 @@ async def get_template_from_blob(recipient_email):
         # Try to match the full email address first
         if recipient_email.lower() in EMAIL_TO_FOLDER_MAPPING:
             folder_name = EMAIL_TO_FOLDER_MAPPING[recipient_email.lower()]
-            print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Using custom folder mapping for {recipient_email}: {folder_name}")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Using custom folder mapping for {recipient_email}: {folder_name}")
         # Then try to match just the mailbox part
         elif mailbox_name in EMAIL_TO_FOLDER_MAPPING:
             folder_name = EMAIL_TO_FOLDER_MAPPING[mailbox_name]
-            print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Using custom folder mapping for {mailbox_name}: {folder_name}")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Using custom folder mapping for {mailbox_name}: {folder_name}")
         # If no mapping found, use the mailbox name as before
         else:
             folder_name = mailbox_name
-            print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - No custom mapping found, using mailbox name: {folder_name}")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - No custom mapping found, using mailbox name: {folder_name}")
         
         # Template file is in the folder with the same name as specified in the mapping
         # Use the domain from the email instead of hardcoding 'mail.co.za'
         template_path = f"{folder_name}/{mailbox_name}@{domain}.htm"
         
-        print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Retrieving template from path: {template_path}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Retrieving template from path: {template_path}")
         
         # Create BlobServiceClient
         blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
@@ -241,6 +276,7 @@ async def get_template_from_blob(recipient_email):
         
         # Check if blob exists
         if await blob_client.exists():
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Template found at primary path: {template_path}")
             # Download blob content - let's try to preserve original encoding
             download_stream = await blob_client.download_blob()
             template_content_bytes = await download_stream.readall()
@@ -248,61 +284,71 @@ async def get_template_from_blob(recipient_email):
             # Try UTF-8 first, then fall back to Windows-1252 (common for Word HTML)
             try:
                 template_content = template_content_bytes.decode('utf-8')
-                print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded with UTF-8")
+                email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded with UTF-8")
             except UnicodeDecodeError:
                 try:
                     template_content = template_content_bytes.decode('windows-1252')
-                    print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded with Windows-1252")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded with Windows-1252")
                 except UnicodeDecodeError:
                     # Final fallback
                     template_content = template_content_bytes.decode('utf-8', errors='replace')
-                    print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Used UTF-8 with error replacement")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Used UTF-8 with error replacement")
             
             return template_content, folder_name
         else:
             # Try fallback to html extension
             alt_template_path = f"{folder_name}/{mailbox_name}@{domain}.html"
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Primary template not found, trying alternative path: {alt_template_path}")
             blob_client = container_client.get_blob_client(alt_template_path)
             
             if await blob_client.exists():
+                email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Template found at alternative path: {alt_template_path}")
                 download_stream = await blob_client.download_blob()  
                 template_content_bytes = await download_stream.readall()
                 
                 # Apply same encoding handling
                 try:
                     template_content = template_content_bytes.decode('utf-8')
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded alternative template with UTF-8")
                 except UnicodeDecodeError:
                     try:
                         template_content = template_content_bytes.decode('windows-1252')
+                        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded alternative template with Windows-1252")
                     except UnicodeDecodeError:
                         template_content = template_content_bytes.decode('utf-8', errors='replace')
+                        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Used UTF-8 with error replacement for alternative template")
                 
                 return template_content, folder_name
             else:
                 # Try one more fallback to a simple named file
                 simple_template_path = f"{folder_name}/{folder_name}.html"
+                email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Alternative template not found, trying simple path: {simple_template_path}")
                 blob_client = container_client.get_blob_client(simple_template_path)
                 
                 if await blob_client.exists():
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Template found at simple path: {simple_template_path}")
                     download_stream = await blob_client.download_blob()
                     template_content_bytes = await download_stream.readall()
                     
                     # Apply same encoding handling
                     try:
                         template_content = template_content_bytes.decode('utf-8')
+                        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded simple template with UTF-8")
                     except UnicodeDecodeError:
                         try:
                             template_content = template_content_bytes.decode('windows-1252')
+                            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Successfully decoded simple template with Windows-1252")
                         except UnicodeDecodeError:
                             template_content = template_content_bytes.decode('utf-8', errors='replace')
+                            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Used UTF-8 with error replacement for simple template")
                     
                     return template_content, folder_name
                 else:
-                    print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Template not found in blob storage for folder: {folder_name}")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - WARNING: Template not found in blob storage for folder: {folder_name}")
                     return None, None
             
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - Error retrieving template from blob storage: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_template_from_blob - ERROR: Error retrieving template from blob storage: {str(e)}")
         return None, None
 
 def get_subject_line_for_template(template_folder, original_subject):
@@ -316,14 +362,21 @@ def get_subject_line_for_template(template_folder, original_subject):
     Returns:
         str: Subject line for the autoresponse
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
     try:
         # Get custom subject line from mapping, or use default
         if template_folder and template_folder in EMAIL_SUBJECT_MAPPING:
-            return EMAIL_SUBJECT_MAPPING[template_folder]
+            subject_line = EMAIL_SUBJECT_MAPPING[template_folder]
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_subject_line_for_template - Using custom subject for {template_folder}: {subject_line}")
+            return subject_line
         else:
-            return EMAIL_SUBJECT_MAPPING.get("default", "Thank you for contacting us")
+            default_subject = EMAIL_SUBJECT_MAPPING.get("default", "Thank you for contacting us")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: get_subject_line_for_template - Using default subject for {template_folder}: {default_subject}")
+            return default_subject
     except Exception as e:
-        print(f"Error getting subject line for template {template_folder}: {str(e)}")
+        error_msg = f"Error getting subject line for template {template_folder}: {str(e)}"
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: get_subject_line_for_template - ERROR: {error_msg}")
         return "Thank you for contacting us"
 
 async def validate_blob_storage_config():
@@ -333,18 +386,23 @@ async def validate_blob_storage_config():
     Returns:
         bool: True if configuration is valid, False otherwise
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
+    email_log(f">> {timestamp} Script: autoresponse.py - Function: validate_blob_storage_config - Validating blob storage configuration")
+    
     if not AZURE_STORAGE_CONNECTION_STRING:
-        print("ERROR: AZURE_STORAGE_CONNECTION_STRING is not configured")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: validate_blob_storage_config - ERROR: AZURE_STORAGE_CONNECTION_STRING is not configured")
         return False
     
     if not BLOB_CONTAINER_NAME:
-        print("ERROR: BLOB_CONTAINER_NAME is not configured")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: validate_blob_storage_config - ERROR: BLOB_CONTAINER_NAME is not configured")
         return False
     
     if not AZURE_STORAGE_PUBLIC_URL:
-        print("ERROR: AZURE_STORAGE_PUBLIC_URL is not configured")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: validate_blob_storage_config - ERROR: AZURE_STORAGE_PUBLIC_URL is not configured")
         return False
     
+    email_log(f">> {timestamp} Script: autoresponse.py - Function: validate_blob_storage_config - Blob storage configuration validated successfully")
     return True
 
 async def check_image_exists_in_blob(blob_container_client, template_folder, image_filename):
@@ -359,12 +417,16 @@ async def check_image_exists_in_blob(blob_container_client, template_folder, ima
     Returns:
         bool: True if image exists, False otherwise
     """
+    timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
+    
     try:
         image_path = f"{template_folder}/{image_filename}"
         blob_client = blob_container_client.get_blob_client(image_path)
-        return await blob_client.exists()
+        exists = await blob_client.exists()
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: check_image_exists_in_blob - Image {image_path} exists: {exists}")
+        return exists
     except Exception as e:
-        print(f"Error checking if image exists in blob: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: check_image_exists_in_blob - ERROR: Error checking if image exists in blob: {str(e)}")
         return False
 
 async def process_template_images(template_content, template_folder):
@@ -382,12 +444,14 @@ async def process_template_images(template_content, template_folder):
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     if not template_content or not template_folder:
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Missing template content or folder")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: Missing template content or folder")
         return template_content
+    
+    email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Starting image processing for template folder: {template_folder}")
     
     # Validate blob storage configuration
     if not await validate_blob_storage_config():
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Blob storage configuration invalid")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - ERROR: Blob storage configuration invalid")
         return template_content
     
     try:
@@ -397,22 +461,23 @@ async def process_template_images(template_content, template_folder):
         # Base URL for images in blob storage - images are in the same folder as the template
         base_url = f"{AZURE_STORAGE_PUBLIC_URL.rstrip('/')}/{BLOB_CONTAINER_NAME}/{template_folder}"
         
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processing images with base URL: {base_url}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processing images with base URL: {base_url}")
         
         # Create blob container client for validation (optional - can be disabled for performance)
         container_client = None
         try:
             blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
             container_client = blob_service_client.get_container_client(BLOB_CONTAINER_NAME)
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Blob container client created successfully")
         except Exception as e:
-            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Error creating blob client for validation: {str(e)}")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: Error creating blob client for validation: {str(e)}")
         
         # Track processed images for debugging
         processed_images = []
         
         # Find and process all img tags
         img_tags = soup.find_all('img')
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(img_tags)} img tags")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(img_tags)} img tags")
         
         for img in img_tags:
             if img.get('src'):
@@ -420,7 +485,7 @@ async def process_template_images(template_content, template_folder):
                 
                 # Skip if already an absolute URL
                 if original_src.startswith('http'):
-                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Skipping absolute URL: {original_src}")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Skipping absolute URL: {original_src}")
                     continue
                 
                 # Clean up the source path
@@ -447,9 +512,9 @@ async def process_template_images(template_content, template_folder):
                         try:
                             image_exists = await check_image_exists_in_blob(container_client, template_folder, img_filename)
                             if not image_exists:
-                                print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: Image not found in blob storage: {img_filename}")
+                                email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: Image not found in blob storage: {img_filename}")
                         except Exception as check_error:
-                            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Error checking image existence: {str(check_error)}")
+                            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - ERROR: Error checking image existence: {str(check_error)}")
                     
                     # Update the src attribute
                     img['src'] = absolute_url
@@ -459,11 +524,11 @@ async def process_template_images(template_content, template_folder):
                         'absolute_url': absolute_url
                     })
                     
-                    print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated img src: {original_src} -> {absolute_url}")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated img src: {original_src} -> {absolute_url}")
         
         # Find and process VML imagedata tags (used in Outlook HTML)
         vml_images = soup.find_all('v:imagedata')
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(vml_images)} VML imagedata tags")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(vml_images)} VML imagedata tags")
         
         for vml_img in vml_images:
             if vml_img.get('src'):
@@ -483,11 +548,11 @@ async def process_template_images(template_content, template_folder):
                     if img_filename:
                         absolute_url = f"{base_url}/{img_filename}"
                         vml_img['src'] = absolute_url
-                        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated VML imagedata src: {original_src} -> {absolute_url}")
+                        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated VML imagedata src: {original_src} -> {absolute_url}")
         
         # Find and process background images in inline styles
         elements_with_style = soup.find_all(lambda tag: tag.has_attr('style') and 'background-image' in tag['style'])
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(elements_with_style)} elements with background-image styles")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Found {len(elements_with_style)} elements with background-image styles")
         
         for elem in elements_with_style:
             style = elem['style']
@@ -520,26 +585,26 @@ async def process_template_images(template_content, template_folder):
             
             if updated_style != original_style:
                 elem['style'] = updated_style
-                print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated background image style")
+                email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Updated background image style")
         
         # Summary logging
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processed {len(processed_images)} images successfully")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Processed {len(processed_images)} images successfully")
         
         # Convert back to string and return
         processed_html = str(soup)
         
         # Additional validation - check if we actually made changes
         if processed_html == template_content:
-            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: No changes were made to template")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - WARNING: No changes were made to template")
         else:
-            print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Template successfully updated with blob storage URLs")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Template successfully updated with blob storage URLs")
         
         return processed_html
         
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Error processing template images: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - ERROR: Error processing template images: {str(e)}")
         import traceback
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Traceback: {traceback.format_exc()}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template_images - Traceback: {traceback.format_exc()}")
         # Return original content if processing fails
         return template_content
 
@@ -560,14 +625,17 @@ async def process_template(template_content, template_folder, email_data):
     
     try:
         if not template_content:
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template - WARNING: No template content provided")
             return template_content
+        
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template - Starting template processing")
         
         # Process image references to use absolute URLs for blob storage - THIS IS THE KEY STEP
         if template_folder:
-            print(f">> {timestamp} Script: autoresponse.py - Function: process_template - Starting image processing for folder: {template_folder}")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template - Starting image processing for folder: {template_folder}")
             processed_content = await process_template_images(template_content, template_folder)
         else:
-            print(f">> {timestamp} Script: autoresponse.py - Function: process_template - No template folder provided, skipping image processing")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template - No template folder provided, skipping image processing")
             processed_content = template_content
         
         # Generate a reference ID (could be based on the email ID or a UUID)
@@ -579,16 +647,18 @@ async def process_template(template_content, template_folder, email_data):
         if len(reference_id) > 10:
             reference_id = reference_id[-10:]
         
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template - Using reference ID: {reference_id}")
+        
         # Replace variables in the template - ONLY the reference ID placeholder
         processed_content = processed_content.replace('{{REFERENCE_ID}}', reference_id)
         
         # Log completion
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template - Template processing completed successfully")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template - Template processing completed successfully")
         
         return processed_content
         
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: process_template - Error processing template: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: process_template - ERROR: Error processing template: {str(e)}")
         return template_content  # Return original content if processing fails
 
 async def send_email(access_token, account, to_email, subject, body_html, body_text):
@@ -610,18 +680,26 @@ async def send_email(access_token, account, to_email, subject, body_html, body_t
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     try:
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_email - Starting email send process")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_email - From: {account}, To: {to_email}, Subject: {subject}")
+        
         # Method 1: Try sending with proper charset and encoding headers
         success = await _send_email_with_charset(access_token, account, to_email, subject, body_html, body_text, timestamp)
         if success:
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_email - Email sent successfully using charset method")
             return True
         
         # Method 2: If that fails, try with base64 encoding
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_email - First method failed, trying base64 encoding")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_email - First method failed, trying base64 encoding")
         success = await _send_email_with_base64(access_token, account, to_email, subject, body_html, body_text, timestamp)
+        if success:
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_email - Email sent successfully using base64 method")
+        else:
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_email - ERROR: All email sending methods failed")
         return success
         
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_email - Error in send_email: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_email - ERROR: Error in send_email: {str(e)}")
         return False
 
 async def _send_email_with_charset(access_token, account, to_email, subject, body_html, body_text, timestamp):
@@ -629,6 +707,8 @@ async def _send_email_with_charset(access_token, account, to_email, subject, bod
     First attempt: Send email with proper charset declarations and headers.
     """
     try:
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Attempting to send with charset method")
+        
         # Ensure HTML has proper charset declaration
         if body_html:
             # Check if HTML already has proper structure
@@ -644,12 +724,14 @@ async def _send_email_with_charset(access_token, account, to_email, subject, bod
 {body_html}
 </body>
 </html>'''
+                email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Added HTML structure with charset")
             elif not '<meta charset=' in body_html.lower() and not 'content-type' in body_html.lower():
                 # Add charset to existing HTML
                 if '<head>' in body_html.lower():
                     head_pos = body_html.lower().find('<head>') + 6
                     charset_meta = '\n<meta charset="UTF-8">\n<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n'
                     body_html = body_html[:head_pos] + charset_meta + body_html[head_pos:]
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Added charset meta tags to existing HTML")
         
         headers = {
             'Authorization': f'Bearer {access_token}',
@@ -687,15 +769,15 @@ async def _send_email_with_charset(access_token, account, to_email, subject, bod
             
             async with session.post(endpoint, headers=headers, data=json_payload.encode('utf-8')) as response:
                 if response.status == 202:
-                    print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Email sent successfully")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Email sent successfully")
                     return True
                 else:
                     response_text = await response.text()
-                    print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Failed with status {response.status}: {response_text}")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - ERROR: Failed with status {response.status}: {response_text}")
                     return False
     
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - Exception: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_charset - ERROR: Exception: {str(e)}")
         return False
 
 async def _send_email_with_base64(access_token, account, to_email, subject, body_html, body_text, timestamp):
@@ -703,6 +785,8 @@ async def _send_email_with_base64(access_token, account, to_email, subject, body
     Second attempt: Send email with base64 encoded content to preserve encoding.
     """
     try:
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - Attempting to send with base64 encoding")
+        
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
@@ -738,17 +822,17 @@ async def _send_email_with_base64(access_token, account, to_email, subject, body
             
             async with session.post(endpoint, headers=headers, data=json_payload.encode('utf-8')) as response:
                 if response.status == 202:
-                    print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - Email sent successfully with base64")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - Email sent successfully with base64")
                     return True
                 else:
                     response_text = await response.text()
-                    print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - Failed with status {response.status}: {response_text}")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - ERROR: Failed with status {response.status}: {response_text}")
                     
                     # If base64 approach failed, try without the isBase64 flag
                     return await _send_email_fallback(access_token, account, to_email, subject, body_html, body_text, timestamp)
     
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - Exception: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_with_base64 - ERROR: Exception: {str(e)}")
         return False
 
 async def _send_email_fallback(access_token, account, to_email, subject, body_html, body_text, timestamp):
@@ -756,6 +840,8 @@ async def _send_email_fallback(access_token, account, to_email, subject, body_ht
     Final fallback: Send with minimal processing.
     """
     try:
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - Attempting fallback email send method")
+        
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
@@ -784,15 +870,15 @@ async def _send_email_fallback(access_token, account, to_email, subject, body_ht
         async with aiohttp.ClientSession() as session:
             async with session.post(endpoint, headers=headers, json=message_body) as response:
                 if response.status == 202:
-                    print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - Email sent successfully with fallback method")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - Email sent successfully with fallback method")
                     return True
                 else:
                     response_text = await response.text()
-                    print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - Final fallback failed with status {response.status}: {response_text}")
+                    email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - ERROR: Final fallback failed with status {response.status}: {response_text}")
                     return False
     
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - Exception: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: _send_email_fallback - ERROR: Exception: {str(e)}")
         return False
 
 async def send_autoresponse(account, sender_email, email_subject, email_data):
@@ -812,6 +898,9 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
     try:
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Starting autoresponse process")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Account: {account}, Sender: {sender_email}, Subject: {email_subject}")
+        
         # Get the recipient email (where the original email was sent to)
         recipient_email = email_data.get('to', '').split(',')[0].strip()
         
@@ -819,7 +908,7 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
         email_body = email_data.get('body_text', '') or email_data.get('body_html', '')
         
         # DEBUG LOGGING - Log what we're about to check
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
               f"CHECKING autoresponse eligibility: ACCOUNT={account} SENDER={sender_email} "
               f"RECIPIENT={recipient_email} SUBJECT='{email_subject}'")
         
@@ -832,26 +921,30 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
         )
         
         if should_skip:
-            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
                   f"SKIPPING autoresponse: {skip_reason}")
             return False  # Return False to indicate no autoresponse was sent (not an error)
         
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - "
               f"Autoresponse allowed, proceeding to send...")
             
         # Continue with existing autoresponse logic...
         # Get access token for Microsoft Graph API
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Obtaining access token")
         access_token = await get_access_token()
         if not access_token:
-            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Failed to obtain access token for autoresponse")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - ERROR: Failed to obtain access token for autoresponse")
             return False
         
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Access token obtained successfully")
+        
         # Get template from Azure Blob Storage
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Retrieving template from blob storage")
         template_content, template_folder = await get_template_from_blob(recipient_email)
         
         # If no template found, use a default template
         if not template_content:
-            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - No template found for {recipient_email}, using default template")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - No template found for {recipient_email}, using default template")
             template_content = """
             <!DOCTYPE html>
             <html>
@@ -864,10 +957,20 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
                 <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
                     <h2 style="color: #0056b3;">Thank you for contacting us</h2>
                     
-                    <p>We have received your email and will respond as soon as possible.</p>
+                    <p>Good day,</p>
+                    <br>
+                    <p>Welcome to Auto&General where you are always serviced right.</p>
+                    <br>
+                    <p>Thank you for reaching out to us. One of our dedicated consultants from the Services team will be in contact with you during operating hours within the next business day.</p>
+                    <br> 
+                    <p>Can’t wait till then? Download the A&G app now and get access to your policy 24/7.</p>
+                    <br>
+                    <p>Please do not reply to this e-mail as it is an automated response.</p>
+                    <br>
+                    <p>Regards,</p>
+                    <p>The Auto&General Team</p>
                     
-                    <p>Reference number: <strong>{{REFERENCE_ID}}</strong></p>
-                    
+                                        
                     <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dddddd; font-size: 12px; color: #666666;">
                         <p>This is an automated response. Please do not reply to this email.</p>
                     </div>
@@ -876,20 +979,23 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
             </html>
             """
             template_folder = None  # No folder for default template
+        else:
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Template found and loaded from folder: {template_folder}")
         
         # Process the template to replace variables and update image references
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Processing template")
         processed_template = await process_template(template_content, template_folder, email_data)
         
         # Create subject line for autoresponse using the new mapping
         subject = get_subject_line_for_template(template_folder, email_subject)
         
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Using subject line: {subject} for template: {template_folder}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Using subject line: {subject} for template: {template_folder}")
         
         # Extract plain text version from HTML (simplified)
         plain_text = "Thank you for your email. We have received your message and will respond as soon as possible. This is an automated response. Please do not reply to this email."
         
         # Send the email with enhanced encoding handling
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Sending autoresponse to {sender_email}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Sending autoresponse to {sender_email}")
         result = await send_email(
             access_token,
             account,
@@ -900,14 +1006,14 @@ async def send_autoresponse(account, sender_email, email_subject, email_data):
         )
         
         if result:
-            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Autoresponse sent successfully to {sender_email}")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - SUCCESS: Autoresponse sent successfully to {sender_email}")
             return True
         else:
-            print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Failed to send autoresponse to {sender_email}")
+            email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - ERROR: Failed to send autoresponse to {sender_email}")
             return False
             
     except Exception as e:
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Error sending autoresponse: {str(e)}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - ERROR: Error sending autoresponse: {str(e)}")
         import traceback
-        print(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - Traceback: {traceback.format_exc()}")
+        email_log(f">> {timestamp} Script: autoresponse.py - Function: send_autoresponse - ERROR: Traceback: {traceback.format_exc()}")
         return False

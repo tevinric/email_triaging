@@ -151,10 +151,10 @@ def is_bounce_or_system_message(sender_email, subject, body_text):
     
     return False
 
-# CREATE EMAIL OBJECT - ENHANCED VERSION
+# CREATE EMAIL OBJECT 
 def create_email_details(msg):
     """
-    Enhanced version that properly handles bounce messages and extracts correct recipient information.
+    Email object creation that properly handles bounce messages and extracts correct recipient information.
     """
     timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime('%Y-%m-%d %H:%M:%S')
     
@@ -172,12 +172,6 @@ def create_email_details(msg):
     subject = msg.get('subject', '')
     body_text = body_content.get('text', '')
     
-    # DEBUG LOGGING - Show what Graph API returned
-    print(f">> {timestamp} Script: email_utils.py - Function: create_email_details - GRAPH API PARSING:")
-    print(f">> {timestamp} Subject: '{subject}'")
-    print(f">> {timestamp} Graph API FROM: '{from_address}'")
-    print(f">> {timestamp} Graph API TO: '{to_recipients_str}'")
-    
     # ENHANCED LOGIC: Check if this is a bounce/system message
     is_bounce = is_bounce_or_system_message(from_address, subject, body_text)
     
@@ -192,12 +186,7 @@ def create_email_details(msg):
             print(f">> {timestamp} Script: email_utils.py - Function: create_email_details - BOUNCE ANALYSIS SUCCESS:")
             print(f">> {timestamp} Original sender found: '{bounce_info.get('original_sender', 'Not found')}'")
             print(f">> {timestamp} Original recipient found: '{bounce_info.get('original_recipient', 'Not found')}'")
-            
-            # For bounce messages, we want to use:
-            # - FROM: The system sender (as Graph API shows it)
-            # - TO: The ACTUAL original recipient (extracted from body)
-            # This way, our loop prevention will see the correct "TO" address
-            
+                        
             if bounce_info.get('original_recipient'):
                 # Override the TO address with the real original recipient
                 to_recipients_str = bounce_info['original_recipient']
@@ -219,11 +208,5 @@ def create_email_details(msg):
         'body_text': body_text,
         'is_bounce_message': is_bounce  # Add flag to indicate if this is a bounce
     }
-    
-    # Final debug log
-    print(f">> {timestamp} Script: email_utils.py - Function: create_email_details - FINAL DETAILS:")
-    print(f">> {timestamp} Final FROM: '{email_details['from']}'")
-    print(f">> {timestamp} Final TO: '{email_details['to']}'")
-    print(f">> {timestamp} Is bounce message: {is_bounce}")
     
     return email_details

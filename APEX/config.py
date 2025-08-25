@@ -16,6 +16,16 @@ SQL_DATABASE = os.environ.get('SQL_DATABASE')
 SQL_USERNAME = os.environ.get('SQL_USERNAME')
 SQL_PASSWORD = os.environ.get('SQL_PASSWORD')
 
+
+# MODEL COSTS
+gpt4opromptcost = os.environ.get('gpt4opromptcost')
+gpt4ocompletioncost = os.environ.get('gpt4ocompletioncost')
+gpt4ocachecost = os.environ.get('gpt4ocachecost')
+gpt4ominipromptcost = os.environ.get('gpt4ominipromptcost')
+gpt4ominicompletioncost = os.environ.get('gpt4ominicompletioncost')
+gpt4ominicachecost = os.environ.get('gpt4ominicachecost')
+
+
 #MICROSOFT GRAPH API CONFIGS
 CLIENT_ID = os.environ.get('CLIENT_ID')
 TENANT_ID = os.environ.get('TENANT_ID')
@@ -27,7 +37,10 @@ SCOPE = ['https://graph.microsoft.com/.default']
 EMAIL_ACCOUNTS = [os.environ.get('EMAIL_ACCOUNT')]
 DEFAULT_EMAIL_ACCOUNT = ''
 
-# INTERVAL IN SECONDS(30) 
+# EMAIL CC EXCLUSION LIST
+CC_EXCLUSION_LIST = os.environ.get('CC_EXCLUSION_LIST')
+
+# INTERVAL IN SECONDS(30) SSS
 EMAIL_FETCH_INTERVAL = 30
 
 # AZURE BLOB STORAGE SETTINGS

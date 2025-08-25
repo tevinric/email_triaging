@@ -8,8 +8,12 @@ import asyncio
 # AZURE OPENAI CONNECTION SETTINGS
 from config import (
     AZURE_OPENAI_KEY, AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_BACKUP_KEY, AZURE_OPENAI_BACKUP_ENDPOINT
+    AZURE_OPENAI_BACKUP_KEY, AZURE_OPENAI_BACKUP_ENDPOINT, gpt4opromptcost, gpt4ocompletioncost, gpt4ocachecost, gpt4ominipromptcost, gpt4ominicompletioncost, gpt4ominicachecost
 )
+
+
+# Import email_log for centralized logging
+from apex_llm.apex_logging import email_log
 
 FX_RATE = 1
 
@@ -26,10 +30,10 @@ client = AzureOpenAI(
 backup_client = None
 
 # All costs below are in USD
-model_costs = {"gpt-4o-mini": {"prompt_token_cost_pm":0.15,
-                            "completion_token_cost_pm":0.60},
-               "gpt-4o":     {"prompt_token_cost_pm":5,
-                            "completion_token_cost_pm":15},
+model_costs = {"gpt-4o-mini": {"prompt_token_cost_pm":float(gpt4ominipromptcost),
+                            "completion_token_cost_pm":float(gpt4ominicompletioncost)},
+               "gpt-4o":     {"prompt_token_cost_pm":float(gpt4opromptcost),
+                            "completion_token_cost_pm":float(gpt4ocompletioncost)},
                }
 
 async def call_openai_with_fallback(deployment, messages, temperature=0.1, subject=None):
@@ -54,7 +58,7 @@ async def call_openai_with_fallback(deployment, messages, temperature=0.1, subje
     
     # Try with primary client first
     try:
-        print(f">> {timestamp} Using PRIMARY OpenAI deployment ({deployment}) {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Using PRIMARY OpenAI deployment ({deployment}) {subject_info}")
         response = await asyncio.to_thread(
             client.chat.completions.create,
             model=deployment,
@@ -62,20 +66,25 @@ async def call_openai_with_fallback(deployment, messages, temperature=0.1, subje
             response_format={"type": "json_object"},
             temperature=temperature
         )
-        print(f">> {timestamp} PRIMARY OpenAI call successful {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - PRIMARY OpenAI call successful {subject_info}")
         response.client_used = "primary"
         return response
     except Exception as primary_error:
-        print(f">> {timestamp} PRIMARY OpenAI client failed: {str(primary_error)} {subject_info}")
-        print(f">> {timestamp} Attempting BACKUP OpenAI deployment ({deployment}) {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - ERROR: PRIMARY OpenAI client failed: {str(primary_error)} {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Attempting BACKUP OpenAI deployment ({deployment}) {subject_info}")
         
         # Initialize backup client if not already done
         if backup_client is None:
-            backup_client = AzureOpenAI(
-                azure_endpoint=AZURE_OPENAI_BACKUP_ENDPOINT,
-                api_key=AZURE_OPENAI_BACKUP_KEY,
-                api_version="2024-02-01",
-            )
+            try:
+                backup_client = AzureOpenAI(
+                    azure_endpoint=AZURE_OPENAI_BACKUP_ENDPOINT,
+                    api_key=AZURE_OPENAI_BACKUP_KEY,
+                    api_version="2024-02-01",
+                )
+                email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Backup client initialized successfully {subject_info}")
+            except Exception as backup_init_error:
+                email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - ERROR: Failed to initialize backup client: {str(backup_init_error)} {subject_info}")
+                raise Exception(f"Failed to initialize backup client: {str(backup_init_error)}")
         
         # Try with backup client
         try:
@@ -86,12 +95,12 @@ async def call_openai_with_fallback(deployment, messages, temperature=0.1, subje
                 response_format={"type": "json_object"},
                 temperature=temperature
             )
-            print(f">> {timestamp} BACKUP OpenAI call successful {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - BACKUP OpenAI call successful {subject_info}")
             response.client_used = "backup"
             return response
         except Exception as backup_error:
-            print(f">> {timestamp} BACKUP OpenAI client also failed: {str(backup_error)} {subject_info}")
-            print(f">> {timestamp} CRITICAL: Both OpenAI endpoints failed, falling back to original destination routing {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - ERROR: BACKUP OpenAI client also failed: {str(backup_error)} {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - CRITICAL: Both OpenAI endpoints failed, falling back to original destination routing {subject_info}")
             raise Exception(f"Both primary and backup AzureOpenAI clients failed. Primary error: {str(primary_error)}. Backup error: {str(backup_error)}")
 
 async def apex_action_check(text, subject=None):
@@ -100,9 +109,14 @@ async def apex_action_check(text, subject=None):
     Uses the smaller GPT-4o-mini model for efficiency.
     """
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    subject_info = f"[Subject: {subject}] " if subject else ""
+    
     try:
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - Starting action requirement analysis {subject_info}")
+        
         # Clean and escape the input text
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - Text cleaned and escaped for processing {subject_info}")
         
         deployment = "gpt-4o-mini"
         messages = [
@@ -133,13 +147,16 @@ async def apex_action_check(text, subject=None):
              "content": f"Analyze this email chain and determine if the latest email requires action:\n\n{cleaned_text}"}
         ]
         
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - Making API call to {deployment} {subject_info}")
+        
         # Use the helper function for API call with fallback
         response = await call_openai_with_fallback(deployment, messages, temperature=0.1, subject=subject)
 
         try:
             json_output = json.loads(response.choices[0].message.content)
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - Successfully parsed JSON response {subject_info}")
         except json.JSONDecodeError as je:
-            print(f">> {timestamp} JSON parsing error in action check: {je}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - ERROR: JSON parsing error: {je} {subject_info}")
             raise Exception(f"Failed to parse JSON response in action check: {str(je)}")
 
         completion_tokens = response.usage.completion_tokens
@@ -147,6 +164,9 @@ async def apex_action_check(text, subject=None):
         total_tokens = prompt_tokens + completion_tokens
         
         cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE)
+        
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - Action analysis complete. Result: {json_output.get('action_required', 'unknown')} {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}, Cost: ${cost_usd:.5f} {subject_info}")
                 
         json_output.update({
             "apex_cost_usd": round(cost_usd, 5),
@@ -162,7 +182,7 @@ async def apex_action_check(text, subject=None):
         return {"response": "200", "message": json_output}
 
     except Exception as e:
-        print(f">> {timestamp} Error in apex_action_check: {str(e)}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_action_check - ERROR: Error in apex_action_check: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
 
 async def apex_categorise(text, subject=None):
@@ -174,10 +194,12 @@ async def apex_categorise(text, subject=None):
     subject_info = f"[Subject: {subject}] " if subject else ""
     
     try: 
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Starting APEX classification {subject_info}")
+        
         # Clean and escape the input text
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Text cleaned and prepared for classification. Length: {len(cleaned_text)} characters {subject_info}")
         
-        print(f">> {timestamp} Starting APEX classification {subject_info}")
         deployment = "gpt-4o"
         messages = [  
             {"role": "system",
@@ -426,6 +448,8 @@ async def apex_categorise(text, subject=None):
         # Track which region we're using (main by default)
         region_used = "main"
         
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Making primary classification API call to {deployment} {subject_info}")
+        
         # Use the helper function for API call with fallback
         response = await call_openai_with_fallback(deployment, messages, temperature=0.2, subject=subject)
         
@@ -434,6 +458,8 @@ async def apex_categorise(text, subject=None):
         gpt_4o_completion_tokens = response.usage.completion_tokens
         gpt_4o_total_tokens = gpt_4o_prompt_tokens + gpt_4o_completion_tokens
         
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Primary classification API call successful. Tokens used - Prompt: {gpt_4o_prompt_tokens}, Completion: {gpt_4o_completion_tokens} {subject_info}")
+        
         # Track region used for primary classification
         if response.client_used == "backup":
             region_used = "backup"
@@ -441,24 +467,29 @@ async def apex_categorise(text, subject=None):
         # JSONIFY THE APEX CLASSIFICATION OUTPUT
         try:
             json_output = json.loads(response.choices[0].message.content)
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Successfully parsed primary classification JSON response {subject_info}")
             
             # GET THE TOKEN USAGE FOR THE APEX CLASSIFICATION CALL
             completion_tokens = response.usage.completion_tokens
             prompt_tokens = response.usage.prompt_tokens
-            apex_cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
+            apex_cost_usd = (completion_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE)
+            
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Primary classification result: {json_output.get('classification', 'unknown')} {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Action required: {json_output.get('action_required', 'unknown')}, Sentiment: {json_output.get('sentiment', 'unknown')} {subject_info}")
  
         except json.JSONDecodeError as je:
-            print(f">> {timestamp} JSON parsing error in categorise: {je} {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - ERROR: JSON parsing error in categorise: {je} {subject_info}")
             raise Exception(f"Failed to parse JSON response in categorise: {str(je)}")
         
         # --> START APEX ACTION CHECK BLOCK 
         try:
-            print(f">> {timestamp} Starting action check verification {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Starting action check verification {subject_info}")
             action_check_response = await apex_action_check(text, subject)
             
             # CHECK IF THE ACTION CHECK WAS SUCCESSFUL
             if action_check_response["response"] == "200":
                 action_check_result = action_check_response["message"]["action_required"]
+                email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Action check completed. Result: {action_check_result} {subject_info}")
                 
                 # ADD THE COST FOR THE APEX ACTION CHECK TO THE TOTAL COST
                 apex_cost_usd += action_check_response["message"]["apex_cost_usd"]
@@ -473,16 +504,18 @@ async def apex_categorise(text, subject=None):
 
                 # CHECK IF THE APEX ACTION CHECK AGENT RESULT IS DIFFERENT FROM THE APEX CLASSIFICATION AGENT 
                 if action_check_result != json_output["action_required"]:
-                    print(f">> {timestamp} Action check override: Original={json_output['action_required']}, New={action_check_result} {subject_info}")
+                    email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Action check override: Original={json_output['action_required']}, New={action_check_result} {subject_info}")
                     
                     # IF THE CHECK SHOWS DIFFERENT RESULT THEN OVERRIDE THE APEX CLASSIFICATION RESULT WITH THE APEX ACTION CHECK RESULT
                     json_output["action_required"] = action_check_result
+                else:
+                    email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Action check confirmed original result: {action_check_result} {subject_info}")
                
-            print(f">> {timestamp} Action check verification complete {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Action check verification complete {subject_info}")
                 
         except Exception as e:
             # IF THE APEX ACTION CHECK FAILS THEN LEAVE THE APEX CLASSIFICATION RESULT AS IS
-            print(f">> {timestamp} Error in action check response: {str(e)} {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - ERROR: Error in action check response: {str(e)} {subject_info}")
             
         # --> END APEX ACTION CHECK BLOCK 
         
@@ -491,17 +524,20 @@ async def apex_categorise(text, subject=None):
         if isinstance(json_output["classification"], list):
             top_categories = json_output["classification"].copy()
             json_output["top_categories"] = top_categories
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Stored top categories: {top_categories} {subject_info}")
         else:
             # If not a list (unexpected), store as is
             json_output["top_categories"] = json_output["classification"]
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - WARNING: Classification was not a list, stored as-is: {json_output['classification']} {subject_info}")
         
         # --> START APEX PRIORITIZE BLOCK
         try:
-            print(f">> {timestamp} Starting category prioritization {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Starting category prioritization {subject_info}")
             apex_prioritize_response = await apex_prioritize(text, json_output["classification"], subject)
             
             # CHECK IF APEX PRIORITIZE WAS SUCCESSFUL
             if apex_prioritize_response["response"] == "200":
+                email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Category prioritization successful {subject_info}")
                 
                 # ADD THE COST FOR THE APEX PRIORITIZE TO THE TOTAL COST
                 apex_cost_usd += apex_prioritize_response["message"]["apex_cost_usd"]
@@ -522,17 +558,20 @@ async def apex_categorise(text, subject=None):
                 json_output["rsn_classification"] = apex_prioritize_response["message"]["rsn_classification"]
                 
                 if original_category != final_category:
-                    print(f">> {timestamp} Category reprioritized: Original={original_category}, Final={final_category} {subject_info}")
+                    email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Category reprioritized: Original={original_category}, Final={final_category} {subject_info}")
+                else:
+                    email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Category prioritization confirmed original: {final_category} {subject_info}")
             
             # IF THE APEX PRIORITIZE FAILS THEN LEAVE THE APEX CLASSIFICATION RESULT AS IS 
             else:
+                email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - WARNING: Category prioritization failed, using fallback approach {subject_info}")
                 # SELECT THE FIRST ELEMENT OF THE APEX CLASSIFICATION CATEGORY LIST - DO NOT KEEP AS A LIST
                 if isinstance(json_output["classification"], list) and len(json_output["classification"]) > 0:
                     json_output["classification"] = json_output["classification"][0]
-                print(f">> {timestamp} Using first category as priority (fallback) {subject_info}")
+                    email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Using first category as priority (fallback): {json_output['classification']} {subject_info}")
                                 
         except Exception as e:
-            print(f">> {timestamp} Error in category prioritization: {str(e)} {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - ERROR: Error in category prioritization: {str(e)} {subject_info}")
 
         # --> END OF APEX PRIORITIZE BLOCK
 
@@ -550,12 +589,13 @@ async def apex_categorise(text, subject=None):
             "gpt_4o_mini_cached_tokens": gpt_4o_mini_cached_tokens
         })
         
-        print(f">> {timestamp} APEX classification complete: Category={json_output['classification']}, Action={json_output['action_required']}, Sentiment={json_output['sentiment']} {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - APEX classification complete: Category={json_output['classification']}, Action={json_output['action_required']}, Sentiment={json_output['sentiment']} {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - Total cost: ${apex_cost_usd:.5f}, Region: {region_used} {subject_info}")
         
         return {"response": "200", "message": json_output}
         
     except Exception as e: 
-        print(f">> {timestamp} ERROR in APEX classification: {str(e)} {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_categorise - ERROR: ERROR in APEX classification: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
 
 async def apex_prioritize(text, category_list, subject=None):
@@ -567,8 +607,12 @@ async def apex_prioritize(text, category_list, subject=None):
     subject_info = f"[Subject: {subject}] " if subject else ""
     
     try:
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - Starting category prioritization analysis {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - Input categories: {category_list} {subject_info}")
+        
         # Clean and escape the input text
         cleaned_text = text.replace('\n', '\\n').replace('\r', '\\r').replace('"', '\\"')
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - Text cleaned for prioritization analysis {subject_info}")
         
         deployment = "gpt-4o-mini"
         messages = [
@@ -699,20 +743,26 @@ async def apex_prioritize(text, category_list, subject=None):
             }
         ]
         
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - Making prioritization API call to {deployment} {subject_info}")
+        
         # Use the helper function for API call with fallback
         response = await call_openai_with_fallback(deployment, messages, temperature=0.1, subject=subject)
 
         try:
             json_output = json.loads(response.choices[0].message.content)
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - Successfully parsed prioritization JSON response {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - Final category selected: {json_output.get('final_category', 'unknown')} {subject_info}")
         except json.JSONDecodeError as je:
-            print(f">> {timestamp} JSON parsing error in prioritization: {je} {subject_info}")
+            email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - ERROR: JSON parsing error in prioritization: {je} {subject_info}")
             raise Exception(f"Failed to parse JSON response in prioritization: {str(je)}")
 
         completion_tokens = response.usage.completion_tokens
         prompt_tokens = response.usage.prompt_tokens
         total_tokens = prompt_tokens + completion_tokens
         
-        cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE)
+        cost_usd = (completion_tokens/1000000 * model_costs[deployment]["completion_token_cost_pm"] * FX_RATE) + (prompt_tokens/1000000 * model_costs[deployment]["prompt_token_cost_pm"] * FX_RATE)
+        
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - Prioritization complete. Tokens used - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Cost: ${cost_usd:.5f} {subject_info}")
                 
         json_output.update({
             "apex_cost_usd": round(cost_usd, 5),
@@ -728,7 +778,7 @@ async def apex_prioritize(text, category_list, subject=None):
         return {"response": "200", "message": json_output}
 
     except Exception as e:
-        print(f">> {timestamp} Error in apex_prioritize: {str(e)} {subject_info}")
+        email_log(f">> {timestamp} Script: apex.py - Function: apex_prioritize - ERROR: Error in apex_prioritize: {str(e)} {subject_info}")
         return {"response": "500", "message": str(e)}
 
 # Synchronous versions for backward compatibility

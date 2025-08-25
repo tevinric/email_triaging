@@ -159,6 +159,49 @@ spec:
                 name: apex-credentials
                 key: AZURE_STORAGE_PUBLIC_URL
 
+          - name: gpt4opromptcost
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: gpt4opromptcost
+
+          - name: gpt4ocompletioncost
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: gpt4ocompletioncost
+
+          - name: gpt4ocachecost
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: gpt4ocachecost
+
+          - name: gpt4ominipromptcost
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: gpt4ominipromptcost
+
+          - name: gpt4ominicompletioncost
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: gpt4ominicompletioncost
+
+          - name: gpt4ominicachecost
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: gpt4ominicachecost
+
+          - name: CC_EXCLUSION_LIST
+            valueFrom:
+              secretKeyRef:
+                name: apex-credentials
+                key: CC_EXCLUSION_LIST
+
+
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false

@@ -182,3 +182,5 @@ apex_uat_results_20250527_204817_Assist.csv
 apex_uat_results_20250527_205651_Bad_Service_Experience.csv
 apex_uat_results_20250527_210541_Claims.csv
 env_var_init_preprod.sh
+env_var_init_automated_test.sh
+env_var_init_dev_preprod.sh
